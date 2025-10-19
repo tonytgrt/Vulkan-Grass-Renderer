@@ -1,13 +1,15 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.10)
 
 project(GLFW C)
 
 set(CMAKE_LEGACY_CYGWIN_WIN32 OFF)
 
 if (NOT CMAKE_VERSION VERSION_LESS "3.0")
-    # Until all major package systems have moved to CMake 3,
-    # we stick with the older INSTALL_NAME_DIR mechanism
-    cmake_policy(SET CMP0042 OLD)
+    # CMP0042: Use @rpath for INSTALL_NAME_DIR on macOS
+    # Setting to NEW for modern CMake compatibility (CMake 4.x requirement)
+    if (POLICY CMP0042)
+        cmake_policy(SET CMP0042 NEW)
+    endif()
 endif()
 
 if (NOT CMAKE_VERSION VERSION_LESS "3.1")
