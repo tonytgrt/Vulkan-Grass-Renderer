@@ -48,9 +48,9 @@ endif()
 
 foreach(SHADER_SOURCE ${SHADER_SOURCES})
     set(SHADER_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+    get_filename_component(fname ${SHADER_SOURCE} NAME)
 
     if(WIN32)
-        get_filename_component(fname ${SHADER_SOURCE} NAME)
         add_custom_target(${fname}.spv
             COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_DIR} &&
             ${GLSLANG_VALIDATOR} -V ${SHADER_SOURCE} -o ${SHADER_DIR}/${fname}.spv -g
@@ -58,9 +58,15 @@ foreach(SHADER_SOURCE ${SHADER_SOURCES})
         )
         ExternalTarget("Shaders" ${fname}.spv)
         add_dependencies(vulkan_grass_rendering ${fname}.spv)
+    else()
+        # macOS and Linux shader compilation
+        add_custom_target(${fname}.spv
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_DIR}
+            COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER_SOURCE} -o ${SHADER_DIR}/${fname}.spv -g
+            SOURCES ${SHADER_SOURCE}
+        )
+        add_dependencies(vulkan_grass_rendering ${fname}.spv)
     endif(WIN32)
-
-    # TODO: Build shaders on not windows
 endforeach()
 
 target_link_libraries(vulkan_grass_rendering ${ASSIMP_LIBRARIES} Vulkan::Vulkan glfw)

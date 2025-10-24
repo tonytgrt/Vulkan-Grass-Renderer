@@ -9,7 +9,10 @@ find_package(Vulkan REQUIRED)
 
 IF(WIN32)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_USE_PLATFORM_WIN32_KHR")
-ELSE(WIN32)
+ELSEIF(APPLE)
+    find_package(Threads REQUIRED)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVK_USE_PLATFORM_MACOS_MVK")
+ELSE()
     find_package(Threads REQUIRED)
 IF(USE_D2D_WSI)
     MESSAGE("Using direct to display extension...")
@@ -22,9 +25,10 @@ ENDIF(USE_D2D_WSI)
 ENDIF(WIN32)
 
 # Set preprocessor defines
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX -D_USE_MATH_DEFINES")
-
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+IF(WIN32)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX -D_USE_MATH_DEFINES")
+    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+ENDIF(WIN32)
 set(CMAKE_CXX_STANDARD 11)
 
 # Enable the creation of folders for Visual Studio projects
@@ -56,7 +60,10 @@ ENDIF(MSVC)
 
 IF(WIN32)
   # Nothing here (yet)
-ELSE(WIN32)
+ELSEIF(APPLE)
+    # macOS uses Cocoa via GLFW, no additional window system libraries needed
+ELSE()
+    # Linux: link XCB for X11
     link_libraries(${XCB_LIBRARIES} ${VULKAN_LIB})
 ENDIF(WIN32)
 
