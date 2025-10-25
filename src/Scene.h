@@ -5,6 +5,7 @@
 
 #include "Model.h"
 #include "Blades.h"
+#include "PhysicsParams.h"
 
 using namespace std::chrono;
 
@@ -16,15 +17,17 @@ struct Time {
 class Scene {
 private:
     Device* device;
-    
+
     VkBuffer timeBuffer;
     VkDeviceMemory timeBufferMemory;
     Time time;
-    
+
     void* mappedData;
 
     std::vector<Model*> models;
     std::vector<Blades*> blades;
+
+    PhysicsParams* physicsParams;
 
 high_resolution_clock::time_point startTime = high_resolution_clock::now();
 
@@ -40,6 +43,7 @@ public:
     void AddBlades(Blades* blades);
 
     VkBuffer GetTimeBuffer() const;
+    PhysicsParams* GetPhysicsParams() const;
 
     void UpdateTime();
 };

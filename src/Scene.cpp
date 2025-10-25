@@ -5,6 +5,8 @@ Scene::Scene(Device* device) : device(device) {
     BufferUtils::CreateBuffer(device, sizeof(Time), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, timeBuffer, timeBufferMemory);
     vkMapMemory(device->GetVkDevice(), timeBufferMemory, 0, sizeof(Time), 0, &mappedData);
     memcpy(mappedData, &time, sizeof(Time));
+
+    physicsParams = new PhysicsParams(device);
 }
 
 const std::vector<Model*>& Scene::GetModels() const {
@@ -38,7 +40,12 @@ VkBuffer Scene::GetTimeBuffer() const {
     return timeBuffer;
 }
 
+PhysicsParams* Scene::GetPhysicsParams() const {
+    return physicsParams;
+}
+
 Scene::~Scene() {
+    delete physicsParams;
     vkUnmapMemory(device->GetVkDevice(), timeBufferMemory);
     vkDestroyBuffer(device->GetVkDevice(), timeBuffer, nullptr);
     vkFreeMemory(device->GetVkDevice(), timeBufferMemory, nullptr);

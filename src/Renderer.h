@@ -19,6 +19,7 @@ public:
     void CreateModelDescriptorSetLayout();
     void CreateTimeDescriptorSetLayout();
     void CreateComputeDescriptorSetLayout();
+    void CreatePhysicsDescriptorSetLayout();
 
     void CreateDescriptorPool();
 
@@ -27,6 +28,7 @@ public:
     void CreateGrassDescriptorSets();
     void CreateTimeDescriptorSet();
     void CreateComputeDescriptorSets();
+    void CreatePhysicsDescriptorSet();
 
     void CreateGraphicsPipeline();
     void CreateGrassPipeline();
@@ -38,6 +40,10 @@ public:
 
     void RecordCommandBuffers();
     void RecordComputeCommandBuffer();
+
+    void InitImGui();
+    void CleanupImGui();
+    void RenderImGui();
 
     void Frame();
 
@@ -57,14 +63,17 @@ private:
     VkDescriptorSetLayout modelDescriptorSetLayout;
     VkDescriptorSetLayout timeDescriptorSetLayout;
     VkDescriptorSetLayout computeDescriptorSetLayout;
+    VkDescriptorSetLayout physicsDescriptorSetLayout;
 
     VkDescriptorPool descriptorPool;
+    VkDescriptorPool imguiDescriptorPool;
 
     VkDescriptorSet cameraDescriptorSet;
     std::vector<VkDescriptorSet> modelDescriptorSets;
     std::vector<VkDescriptorSet> grassDescriptorSets;
     VkDescriptorSet timeDescriptorSet;
     std::vector<VkDescriptorSet> computeDescriptorSets;
+    VkDescriptorSet physicsDescriptorSet;
 
     VkPipelineLayout graphicsPipelineLayout;
     VkPipelineLayout grassPipelineLayout;

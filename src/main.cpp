@@ -1,4 +1,5 @@
 #include <vulkan/vulkan.h>
+#include <imgui.h>
 #include "Instance.h"
 #include "Window.h"
 #include "Renderer.h"
@@ -25,7 +26,24 @@ namespace {
     double previousX = 0.0;
     double previousY = 0.0;
 
+    // Store ImGui's original callbacks so we can chain them
+    GLFWmousebuttonfun prevMouseButtonCallback = nullptr;
+    GLFWcursorposfun prevCursorPosCallback = nullptr;
+    GLFWscrollfun prevScrollCallback = nullptr;
+
     void mouseDownCallback(GLFWwindow* window, int button, int action, int mods) {
+        // Call ImGui's callback first
+        if (prevMouseButtonCallback) {
+            prevMouseButtonCallback(window, button, action, mods);
+        }
+
+        // Check if ImGui wants the mouse input
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            // ImGui wants the mouse input, don't process camera controls
+            return;
+        }
+
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) {
                 leftMouseDown = true;
@@ -46,6 +64,17 @@ namespace {
     }
 
     void mouseMoveCallback(GLFWwindow* window, double xPosition, double yPosition) {
+        // Call ImGui's callback first
+        if (prevCursorPosCallback) {
+            prevCursorPosCallback(window, xPosition, yPosition);
+        }
+
+        // Don't process camera movement if ImGui wants the mouse
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            return;
+        }
+
         if (leftMouseDown) {
             double sensitivity = 0.5;
             float deltaX = static_cast<float>((previousX - xPosition) * sensitivity);
@@ -65,6 +94,17 @@ namespace {
     }
 
     void scrollCallback(GLFWwindow* window, double xOffset, double yOffset) {
+        // Call ImGui's callback first
+        if (prevScrollCallback) {
+            prevScrollCallback(window, xOffset, yOffset);
+        }
+
+        // Don't process scroll if ImGui wants the mouse
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            return;
+        }
+
         float zoomSpeed = 0.5f;
         float deltaZ = static_cast<float>(yOffset * zoomSpeed);
         camera->UpdateOrbit(0.0f, 0.0f, deltaZ);
@@ -146,9 +186,11 @@ int main() {
     renderer = new Renderer(device, swapChain, scene, camera);
 
     glfwSetWindowSizeCallback(GetGLFWWindow(), resizeCallback);
-    glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
-    glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
-    glfwSetScrollCallback(GetGLFWWindow(), scrollCallback);
+
+    // Save ImGui's callbacks and install our chained callbacks
+    prevMouseButtonCallback = glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
+    prevCursorPosCallback = glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
+    prevScrollCallback = glfwSetScrollCallback(GetGLFWWindow(), scrollCallback);
 
     while (!ShouldQuit()) {
         glfwPollEvents();

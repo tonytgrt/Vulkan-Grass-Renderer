@@ -5,6 +5,11 @@
 #include "Blades.h"
 #include "Camera.h"
 #include "Image.h"
+#include "Window.h"
+
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 static constexpr unsigned int WORKGROUP_SIZE = 32;
 
@@ -21,16 +26,19 @@ Renderer::Renderer(Device* device, SwapChain* swapChain, Scene* scene, Camera* c
     CreateModelDescriptorSetLayout();
     CreateTimeDescriptorSetLayout();
     CreateComputeDescriptorSetLayout();
+    CreatePhysicsDescriptorSetLayout();
     CreateDescriptorPool();
     CreateCameraDescriptorSet();
     CreateModelDescriptorSets();
     CreateGrassDescriptorSets();
     CreateTimeDescriptorSet();
     CreateComputeDescriptorSets();
+    CreatePhysicsDescriptorSet();
     CreateFrameResources();
     CreateGraphicsPipeline();
     CreateGrassPipeline();
     CreateComputePipeline();
+    InitImGui();
     RecordCommandBuffers();
     RecordComputeCommandBuffer();
 }
@@ -232,6 +240,28 @@ void Renderer::CreateComputeDescriptorSetLayout() {
     }
 }
 
+void Renderer::CreatePhysicsDescriptorSetLayout() {
+    // Binding 0: Physics parameters uniform buffer
+    VkDescriptorSetLayoutBinding physicsBinding = {};
+    physicsBinding.binding = 0;
+    physicsBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    physicsBinding.descriptorCount = 1;
+    physicsBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    physicsBinding.pImmutableSamplers = nullptr;
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings = { physicsBinding };
+
+    // Create the descriptor set layout
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(logicalDevice, &layoutInfo, nullptr, &physicsDescriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create physics descriptor set layout");
+    }
+}
+
 void Renderer::CreateDescriptorPool() {
     // Describe which descriptor types that the descriptor sets will contain
     std::vector<VkDescriptorPoolSize> poolSizes = {
@@ -247,6 +277,9 @@ void Renderer::CreateDescriptorPool() {
         // Time (compute)
         { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER , 1 },
 
+        // Physics params (compute)
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER , 1 },
+
         // Compute shader storage buffers (3 per Blades object: blades, culledBlades, numBlades)
         { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER , static_cast<uint32_t>(scene->GetBlades().size() * 3) },
     };
@@ -255,8 +288,8 @@ void Renderer::CreateDescriptorPool() {
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    // Camera + Time + Models + Blades (for graphics) + Compute sets (for blades)
-    poolInfo.maxSets = 5 + static_cast<uint32_t>(scene->GetBlades().size());
+    // Camera + Time + Physics + Models + Blades (for graphics) + Compute sets (for blades)
+    poolInfo.maxSets = 6 + static_cast<uint32_t>(scene->GetBlades().size());
 
     if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor pool");
@@ -457,6 +490,38 @@ void Renderer::CreateComputeDescriptorSets() {
         // Update descriptor sets
         vkUpdateDescriptorSets(logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
+}
+
+void Renderer::CreatePhysicsDescriptorSet() {
+    // Allocate descriptor set
+    VkDescriptorSetLayout layouts[] = { physicsDescriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = layouts;
+
+    if (vkAllocateDescriptorSets(logicalDevice, &allocInfo, &physicsDescriptorSet) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate physics descriptor set");
+    }
+
+    // Configure the descriptor to refer to physics params buffer
+    VkDescriptorBufferInfo physicsBufferInfo = {};
+    physicsBufferInfo.buffer = scene->GetPhysicsParams()->GetBuffer();
+    physicsBufferInfo.offset = 0;
+    physicsBufferInfo.range = sizeof(PhysicsParamsData);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = physicsDescriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &physicsBufferInfo;
+
+    // Update descriptor set
+    vkUpdateDescriptorSets(logicalDevice, 1, &descriptorWrite, 0, nullptr);
 }
 
 void Renderer::CreateGraphicsPipeline() {
@@ -814,8 +879,8 @@ void Renderer::CreateComputePipeline() {
     computeShaderStageInfo.module = computeShaderModule;
     computeShaderStageInfo.pName = "main";
 
-    // Set 0: Camera, Set 1: Time, Set 2: Compute (blades buffers)
-    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { cameraDescriptorSetLayout, timeDescriptorSetLayout, computeDescriptorSetLayout };
+    // Set 0: Camera, Set 1: Time, Set 2: Compute (blades buffers), Set 3: Physics
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts = { cameraDescriptorSetLayout, timeDescriptorSetLayout, computeDescriptorSetLayout, physicsDescriptorSetLayout };
 
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
@@ -981,6 +1046,9 @@ void Renderer::RecordComputeCommandBuffer() {
     // Bind descriptor set for time uniforms
     vkCmdBindDescriptorSets(computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 1, 1, &timeDescriptorSet, 0, nullptr);
 
+    // Bind descriptor set for physics parameters
+    vkCmdBindDescriptorSets(computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 3, 1, &physicsDescriptorSet, 0, nullptr);
+
     // For each group of blades, bind its descriptor set and dispatch
     for (uint32_t i = 0; i < scene->GetBlades().size(); ++i) {
         // Bind compute descriptor set (Set 2) for this Blades object
@@ -1086,6 +1154,12 @@ void Renderer::RecordCommandBuffers() {
             vkCmdDrawIndirect(commandBuffers[i], scene->GetBlades()[j]->GetNumBladesBuffer(), 0, 1, sizeof(BladeDrawIndirect));
         }
 
+        // Render ImGui (only if we have valid draw data)
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        if (draw_data != nullptr) {
+            ImGui_ImplVulkan_RenderDrawData(draw_data, commandBuffers[i]);
+        }
+
         // End render pass
         vkCmdEndRenderPass(commandBuffers[i]);
 
@@ -1112,6 +1186,12 @@ void Renderer::Frame() {
         RecreateFrameResources();
         return;
     }
+
+    // Update ImGui for this frame
+    RenderImGui();
+
+    // Re-record command buffers with updated ImGui draw data
+    RecordCommandBuffers();
 
     // Submit the command buffer
     VkSubmitInfo submitInfo = {};
@@ -1142,11 +1222,11 @@ void Renderer::Frame() {
 Renderer::~Renderer() {
     vkDeviceWaitIdle(logicalDevice);
 
-    // TODO: destroy any resources you created
+    CleanupImGui();
 
     vkFreeCommandBuffers(logicalDevice, graphicsCommandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
     vkFreeCommandBuffers(logicalDevice, computeCommandPool, 1, &computeCommandBuffer);
-    
+
     vkDestroyPipeline(logicalDevice, graphicsPipeline, nullptr);
     vkDestroyPipeline(logicalDevice, grassPipeline, nullptr);
     vkDestroyPipeline(logicalDevice, computePipeline, nullptr);
@@ -1158,6 +1238,8 @@ Renderer::~Renderer() {
     vkDestroyDescriptorSetLayout(logicalDevice, cameraDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(logicalDevice, modelDescriptorSetLayout, nullptr);
     vkDestroyDescriptorSetLayout(logicalDevice, timeDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(logicalDevice, computeDescriptorSetLayout, nullptr);
+    vkDestroyDescriptorSetLayout(logicalDevice, physicsDescriptorSetLayout, nullptr);
 
     vkDestroyDescriptorPool(logicalDevice, descriptorPool, nullptr);
 
@@ -1165,4 +1247,128 @@ Renderer::~Renderer() {
     DestroyFrameResources();
     vkDestroyCommandPool(logicalDevice, computeCommandPool, nullptr);
     vkDestroyCommandPool(logicalDevice, graphicsCommandPool, nullptr);
+}
+
+void Renderer::InitImGui() {
+    // Create ImGui descriptor pool
+    VkDescriptorPoolSize poolSizes[] = {
+        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets = 1000;
+    poolInfo.poolSizeCount = sizeof(poolSizes) / sizeof(VkDescriptorPoolSize);
+    poolInfo.pPoolSizes = poolSizes;
+
+    if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create ImGui descriptor pool");
+    }
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+
+    // Setup Platform/Renderer backends
+    // Install callbacks - app callbacks will check WantCaptureMouse to avoid conflicts
+    ImGui_ImplGlfw_InitForVulkan(GetGLFWWindow(), true);
+    ImGui_ImplVulkan_InitInfo initInfo = {};
+    initInfo.ApiVersion = VK_API_VERSION_1_0;
+    initInfo.Instance = device->GetInstance()->GetVkInstance();
+    initInfo.PhysicalDevice = device->GetInstance()->GetPhysicalDevice();
+    initInfo.Device = logicalDevice;
+    initInfo.QueueFamily = device->GetInstance()->GetQueueFamilyIndices()[QueueFlags::Graphics];
+    initInfo.Queue = device->GetQueue(QueueFlags::Graphics);
+    initInfo.PipelineCache = VK_NULL_HANDLE;
+    initInfo.DescriptorPool = imguiDescriptorPool;
+    initInfo.MinImageCount = 2;
+    initInfo.ImageCount = swapChain->GetCount();
+    initInfo.UseDynamicRendering = false;
+    initInfo.Allocator = nullptr;
+
+    // Setup pipeline info for main viewport
+    initInfo.PipelineInfoMain.RenderPass = renderPass;
+    initInfo.PipelineInfoMain.Subpass = 0;
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    ImGui_ImplVulkan_Init(&initInfo);
+}
+
+void Renderer::CleanupImGui() {
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    vkDestroyDescriptorPool(logicalDevice, imguiDescriptorPool, nullptr);
+}
+
+void Renderer::RenderImGui() {
+    // Start new ImGui frame
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    // Set initial window size and position (only on first frame)
+    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+
+    // Create GUI window for physics parameters
+    ImGui::Begin("Physics Parameters");
+
+    PhysicsParams* params = scene->GetPhysicsParams();
+    PhysicsParamsData& data = params->GetData();
+    bool updated = false;
+
+    // Gravity
+    if (ImGui::SliderFloat("Gravity Strength", &data.gravityStrength, 0.0f, 10.0f)) {
+        updated = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Wind Settings");
+
+    // Wind direction
+    if (ImGui::SliderFloat3("Wind Direction", &data.windDirection.x, -1.0f, 1.0f)) {
+        data.windDirection = glm::normalize(data.windDirection);
+        updated = true;
+    }
+
+    // Wind strength
+    if (ImGui::SliderFloat("Wind Strength", &data.windStrength, 0.0f, 20.0f)) {
+        updated = true;
+    }
+
+    // Wind frequency
+    if (ImGui::SliderFloat("Wind Frequency", &data.windFrequency, 0.1f, 5.0f)) {
+        updated = true;
+    }
+
+    // Turbulence strength
+    if (ImGui::SliderFloat("Turbulence Strength", &data.turbulenceStrength, 0.0f, 10.0f)) {
+        updated = true;
+    }
+
+    // Update buffer if any parameter changed
+    if (updated) {
+        params->UpdateBuffer();
+    }
+
+    ImGui::End();
+
+    // Render ImGui
+    ImGui::Render();
 }
