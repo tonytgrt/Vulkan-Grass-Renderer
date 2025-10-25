@@ -9,10 +9,48 @@ layout(set = 0, binding = 0) uniform CameraBufferObject {
 } camera;
 
 // TODO: Declare tessellation evaluation shader inputs and outputs
+layout(location = 0) in vec4 in_v0[];
+layout(location = 1) in vec4 in_v1[];
+layout(location = 2) in vec4 in_v2[];
+layout(location = 3) in vec4 in_up[];
+
+layout(location = 0) out vec3 out_normal;
+layout(location = 1) out vec3 out_color;
 
 void main() {
     float u = gl_TessCoord.x;
     float v = gl_TessCoord.y;
 
 	// TODO: Use u and v to parameterize along the grass blade and output positions for each vertex of the grass blade
+
+    vec3 v0 = in_v0[0].xyz;
+    vec3 v1 = in_v1[0].xyz;
+    vec3 v2 = in_v2[0].xyz;
+    vec3 up = in_up[0].xyz;
+
+    float orientation = in_v0[0].w;
+    float height = in_v1[0].w;
+    float width = in_v2[0].w;
+
+    float t = gl_TessCoord.y;
+
+    vec3 a = v0 + (v1 - v0) * t;
+    vec3 b = v1 + (v2 - v1) * t;
+    vec3 c = a + t * (b - a);
+
+    vec3 t0 = normalize(b - a);
+
+    vec3 facing = vec3(sin(orientation), 0.0, cos(orientation));
+    vec3 bitangent = normalize(cross(t0, facing));
+
+    float w = (u - 0.5);
+
+    float taper = mix(1.0, 0.0, t);
+
+    vec3 position = c + bitangent * w * width * taper;
+
+    gl_Position = camera.proj * camera.view * vec4(position, 1.0);
+
+    out_normal = normalize(cross(bitangent, t0));
+    out_color = vec3(0.2, 0.6, 0.3);
 }

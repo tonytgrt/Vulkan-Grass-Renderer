@@ -63,6 +63,12 @@ namespace {
             previousY = yPosition;
         }
     }
+
+    void scrollCallback(GLFWwindow* window, double xOffset, double yOffset) {
+        float zoomSpeed = 0.5f;
+        float deltaZ = static_cast<float>(yOffset * zoomSpeed);
+        camera->UpdateOrbit(0.0f, 0.0f, deltaZ);
+    }
 }
 
 int main() {
@@ -142,6 +148,7 @@ int main() {
     glfwSetWindowSizeCallback(GetGLFWWindow(), resizeCallback);
     glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
     glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
+    glfwSetScrollCallback(GetGLFWWindow(), scrollCallback);
 
     while (!ShouldQuit()) {
         glfwPollEvents();
