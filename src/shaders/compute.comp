@@ -50,6 +50,59 @@ void main() {
 
     Blade blade = blades[index];
 
+    vec3 v0 = blade.v0.xyz;
+    vec3 v1 = blade.v1.xyz;
+    vec3 v2 = blade.v2.xyz;
+    vec3 up = blade.up.xyz;
+
+    float orientation = blade.v0.w;
+    float height = blade.v1.w;
+    float width = blade.v2.w;
+    float stiffness = blade.up.w;
+
+    vec3 gE = vec3(0.0, -9.81, 0.0);
+    vec3 gF = 0.25 * length(gE) * normalize(gE);
+
+    vec3 iv2 = v0 + up * height;
+
+    vec3 recoveryForce = (iv2 - v2) * stiffness;
+
+    vec3 windDirection = normalize(vec3(1.0, 0.0, 1.0));
+    float windStrength = 5.0;
+    float theta = orientation;
+    vec3 bladeDirection = vec3(sin(theta), 0.0, cos(theta));
+
+    float alignment = max(0.0, dot(windDirection, normalize(v2 - v0)));
+
+    vec3 windDirectional = windDirection * windStrength * alignment;
+
+    float freq = 2.0;
+    float turbulenceStrength = 2.0;
+
+    float noiseX = sin(totalTime * freq + v0.x * 0.5) * cos(totalTime * freq * 0.7);
+    float noiseZ = cos(totalTime * freq + v0.z * 0.5) * sin(totalTime * freq * 0.9);
+
+    vec3 windTurbulence = vec3(noiseX, 0.0, noiseZ) * turbulenceStrength;
+
+    vec3 windForce = windDirectional + windTurbulence;
+
+    vec3 totalForce = gF + recoveryForce + windForce;
+
+    // v2 cannot go below ground
+    vec3 v2_new = v2 + totalForce * deltaTime;
+    v2_new = v2_new - up * min(dot(up, v2_new - v0), 0.0);
+
+    // blade length cannot exceed height
+    float currentLength = length(v2_new - v0);
+    if (currentLength > height) {
+        v2_new = v0 + normalize(v2_new - v0) * height;
+    }
+
+    vec3 v1_new = v0 + height * up * 0.5 + (v2_new - v0) * 0.5;
+
+    blade.v1.xyz = v1_new;
+    blade.v2.xyz = v2_new;
+
     culledBlades[index] = blade;
 
     if (gl_GlobalInvocationID.x == 0) {

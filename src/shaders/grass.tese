@@ -32,11 +32,9 @@ void main() {
     float height = in_v1[0].w;
     float width = in_v2[0].w;
 
-    float t = gl_TessCoord.y;
-
-    vec3 a = v0 + (v1 - v0) * t;
-    vec3 b = v1 + (v2 - v1) * t;
-    vec3 c = a + t * (b - a);
+    vec3 a = v0 + (v1 - v0) * v;
+    vec3 b = v1 + (v2 - v1) * v;
+    vec3 c = a + v * (b - a);
 
     vec3 t0 = normalize(b - a);
 
@@ -45,7 +43,7 @@ void main() {
 
     float w = (u - 0.5);
 
-    float taper = mix(1.0, 0.0, t);
+    float taper = mix(1.0, 0.0, v);
 
     vec3 position = c + bitangent * w * width * taper;
 
