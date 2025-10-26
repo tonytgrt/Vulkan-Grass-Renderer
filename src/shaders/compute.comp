@@ -8,6 +8,8 @@ layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 layout(set = 0, binding = 0) uniform CameraBufferObject {
     mat4 view;
     mat4 proj;
+    vec3 cameraPosition;
+    float padding;  // Align to 16 bytes
 } camera;
 
 layout(set = 1, binding = 0) uniform Time {
@@ -45,6 +47,10 @@ layout(set = 3, binding = 0) uniform PhysicsParams {
     float windStrength;
     float windFrequency;
     float turbulenceStrength;
+    float orientationThreshold;
+    float frustumTolerance;
+    float maxDistance;
+    float numBuckets;
 } physics;
 
 bool inBounds(float value, float bounds) {
@@ -127,17 +133,10 @@ void main() {
     bool culled = false;
 
     // Orientation culling
-    // Extract camera position from inverse of view matrix
-    // For a view matrix, the camera position is -transpose(rotation) * translation
-    vec3 cameraPos = -vec3(
-        dot(camera.view[0].xyz, camera.view[3].xyz),
-        dot(camera.view[1].xyz, camera.view[3].xyz),
-        dot(camera.view[2].xyz, camera.view[3].xyz)
-    );
+    vec3 cameraPos = camera.cameraPosition;
     vec3 viewDir = normalize(cameraPos - v0);
 
-    float threshold = 0.9;
-    if (abs(dot(bladeDirection, viewDir)) > threshold) {
+    if (abs(dot(bladeDirection, viewDir)) > physics.orientationThreshold) {
         culled = true;
     }
 
@@ -148,7 +147,7 @@ void main() {
     vec3 ndcV0 = clipV0.xyz / clipV0.w;
     vec3 ndcV2 = clipV2.xyz / clipV2.w;
 
-    float tolerance = 0.1;
+    float tolerance = physics.frustumTolerance;
 
     bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
     bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
@@ -163,26 +162,21 @@ void main() {
 
     // Distance culling
     float distanceToCamera = length(cameraPos - v0);
-    float maxDistance = 30.0;
-    int numBuckets = 10;
 
-    if (distanceToCamera > maxDistance) {
+    if (distanceToCamera > physics.maxDistance) {
         culled = true;
     } else {
-        int bucketIndex = int(floor(float(numBuckets) * distanceToCamera / maxDistance));
-        bucketIndex = min(bucketIndex, numBuckets - 1);
+        int bucketIndex = int(floor(physics.numBuckets * distanceToCamera / physics.maxDistance));
+        bucketIndex = min(bucketIndex, int(physics.numBuckets) - 1);
 
         float hash = fract(sin(dot(v0.xz ,vec2(12.9898,78.233))) * 43758.5453);
-
-        // Bucket 0 (closest): keep 100%, Bucket 9 (farthest): keep 10%
-        float cullThreshold = 1.0 - (float(bucketIndex) / float(numBuckets));
+        float cullThreshold = 1.0 - (float(bucketIndex) / physics.numBuckets);
 
         if (hash > cullThreshold) {
             culled = true;
         }
     }
 
-    // Write only non-culled blades to output
     if (!culled) {
         uint outIndex = atomicAdd(numBlades.vertexCount, 1);
         culledBlades[outIndex] = blade;

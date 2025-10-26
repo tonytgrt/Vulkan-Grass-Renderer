@@ -7,6 +7,8 @@
 struct CameraBufferObject {
   glm::mat4 viewMatrix;
   glm::mat4 projectionMatrix;
+  glm::vec3 cameraPosition;
+  float padding;  // Align to 16 bytes
 };
 
 class Camera {

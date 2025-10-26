@@ -17,7 +17,13 @@ struct PhysicsParamsData {
 
     float windFrequency = 1.0f;
     float turbulenceStrength = 3.0f;
-    float padding2[2];  // Padding for alignment
+
+    // Culling parameters
+    float orientationThreshold = 0.9f;    // Orientation culling threshold
+    float frustumTolerance = 0.1f;         // Frustum culling tolerance
+
+    float maxDistance = 30.0f;             // Max distance for culling
+    float numBuckets = 10.0f;              // Number of distance buckets (as float for std140)
 };
 
 class PhysicsParams {

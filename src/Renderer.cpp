@@ -1329,10 +1329,10 @@ void Renderer::RenderImGui() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
 
-    ImGui::Begin("Physics Parameters");
+    ImGui::Begin("Physics & Culling Parameters");
 
     // Display performance metrics
     float deltaTime = scene->GetDeltaTime();
@@ -1374,6 +1374,41 @@ void Renderer::RenderImGui() {
     // Turbulence strength
     if (ImGui::SliderFloat("Turbulence Strength", &data.turbulenceStrength, 0.0f, 10.0f)) {
         updated = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Culling Settings");
+
+    // Orientation culling threshold
+    if (ImGui::SliderFloat("Orientation Threshold", &data.orientationThreshold, 0.0f, 1.0f)) {
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Higher = more aggressive culling of edge-on blades");
+    }
+
+    // Frustum tolerance
+    if (ImGui::SliderFloat("Frustum Tolerance", &data.frustumTolerance, 0.0f, 1.0f)) {
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Larger = keep more blades near frustum edges");
+    }
+
+    // Max distance
+    if (ImGui::SliderFloat("Max Distance", &data.maxDistance, 10.0f, 100.0f)) {
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Blades beyond this distance are culled");
+    }
+
+    // Number of buckets
+    if (ImGui::SliderFloat("Distance Buckets", &data.numBuckets, 1.0f, 20.0f)) {
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("More buckets = smoother LOD transitions");
     }
 
     // Update buffer if any parameter changed
