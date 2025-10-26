@@ -47,7 +47,8 @@ void Renderer::CreateCommandPools() {
     VkCommandPoolCreateInfo graphicsPoolInfo = {};
     graphicsPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     graphicsPoolInfo.queueFamilyIndex = device->GetInstance()->GetQueueFamilyIndices()[QueueFlags::Graphics];
-    graphicsPoolInfo.flags = 0;
+    // Allow command pool reset for efficient re-recording
+    graphicsPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     if (vkCreateCommandPool(logicalDevice, &graphicsPoolInfo, nullptr, &graphicsCommandPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create command pool");
@@ -1066,17 +1067,23 @@ void Renderer::RecordComputeCommandBuffer() {
 }
 
 void Renderer::RecordCommandBuffers() {
-    commandBuffers.resize(swapChain->GetCount());
+    // If command buffers already exist, reset the pool for efficient re-recording
+    if (!commandBuffers.empty()) {
+        // Reset the entire command pool
+        vkResetCommandPool(logicalDevice, graphicsCommandPool, 0);
+    } else {
+        // First time: allocate command buffers
+        commandBuffers.resize(swapChain->GetCount());
 
-    // Specify the command pool and number of buffers to allocate
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = graphicsCommandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = graphicsCommandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
-    if (vkAllocateCommandBuffers(logicalDevice, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate command buffers");
+        if (vkAllocateCommandBuffers(logicalDevice, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate command buffers");
+        }
     }
 
     // Start command buffer recording
