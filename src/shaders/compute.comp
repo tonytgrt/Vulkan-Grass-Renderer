@@ -53,6 +53,18 @@ bool inBounds(float value, float bounds) {
 
 void main() {
 	uint index = gl_GlobalInvocationID.x;
+
+    // Reset the indirect draw count (only first thread does this)
+    if (index == 0) {
+        numBlades.vertexCount = 0;
+        numBlades.instanceCount = 1;
+        numBlades.firstVertex = 0;
+        numBlades.firstInstance = 0;
+    }
+
+    // Synchronize to ensure reset completes before any thread increments
+    barrier();
+
     if (index >= NUM_BLADES) {
         return;
     }
@@ -112,6 +124,71 @@ void main() {
     blade.v1.xyz = v1_new;
     blade.v2.xyz = v2_new;
 
+    bool culled = false;
+
+    // Orientation culling
+    // Extract camera position from inverse of view matrix
+    // For a view matrix, the camera position is -transpose(rotation) * translation
+    vec3 cameraPos = -vec3(
+        dot(camera.view[0].xyz, camera.view[3].xyz),
+        dot(camera.view[1].xyz, camera.view[3].xyz),
+        dot(camera.view[2].xyz, camera.view[3].xyz)
+    );
+    vec3 viewDir = normalize(cameraPos - v0);
+
+    float threshold = 0.9;
+    if (abs(dot(bladeDirection, viewDir)) > threshold) {
+        culled = true;
+    }
+
+    // View-frustum culling
+    vec4 clipV0 = camera.proj * camera.view * vec4(v0, 1.0);
+    vec4 clipV2 = camera.proj * camera.view * vec4(v2_new, 1.0);
+
+    vec3 ndcV0 = clipV0.xyz / clipV0.w;
+    vec3 ndcV2 = clipV2.xyz / clipV2.w;
+
+    float tolerance = 0.1;
+
+    bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
+    bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
+    bool outsideBottom = (ndcV0.y < -1.0 - tolerance) && (ndcV2.y < -1.0 - tolerance);
+    bool outsideTop = (ndcV0.y > 1.0 + tolerance) && (ndcV2.y > 1.0 + tolerance);
+    bool outsideNear = (ndcV0.z < -1.0 - tolerance) && (ndcV2.z < -1.0 - tolerance);
+    bool outsideFar = (ndcV0.z > 1.0 + tolerance) && (ndcV2.z > 1.0 + tolerance);
+
+    if (outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar) {
+        culled = true;
+    }
+
+    // Distance culling
+    float distanceToCamera = length(cameraPos - v0);
+    float maxDistance = 30.0;
+    int numBuckets = 10;
+
+    if (distanceToCamera > maxDistance) {
+        culled = true;
+    } else {
+        int bucketIndex = int(floor(float(numBuckets) * distanceToCamera / maxDistance));
+        bucketIndex = min(bucketIndex, numBuckets - 1);
+
+        float hash = fract(sin(dot(v0.xz ,vec2(12.9898,78.233))) * 43758.5453);
+
+        // Bucket 0 (closest): keep 100%, Bucket 9 (farthest): keep 10%
+        float cullThreshold = 1.0 - (float(bucketIndex) / float(numBuckets));
+
+        if (hash > cullThreshold) {
+            culled = true;
+        }
+    }
+
+    // Write only non-culled blades to output
+    if (!culled) {
+        uint outIndex = atomicAdd(numBlades.vertexCount, 1);
+        culledBlades[outIndex] = blade;
+    }
+
+    /*
     culledBlades[index] = blade;
 
     if (gl_GlobalInvocationID.x == 0) {
@@ -120,5 +197,6 @@ void main() {
         numBlades.firstVertex = 0;
         numBlades.firstInstance = 0;
     }
+    */
 }
 
