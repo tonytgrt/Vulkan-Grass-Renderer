@@ -1322,19 +1322,26 @@ void Renderer::RenderImGui() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Set initial window size and position (only on first frame)
     ImGui::SetNextWindowSize(ImVec2(400, 300), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
 
-    // Create GUI window for physics parameters
     ImGui::Begin("Physics Parameters");
+
+    // Display performance metrics
+    float deltaTime = scene->GetDeltaTime();
+    float fps = (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f;
+    ImGui::Text("Performance");
+    ImGui::Text("FPS: %.1f", fps);
+    ImGui::Text("Frame Time: %.3f ms", deltaTime * 1000.0f);
+    ImGui::Separator();
 
     PhysicsParams* params = scene->GetPhysicsParams();
     PhysicsParamsData& data = params->GetData();
     bool updated = false;
 
     // Gravity
-    if (ImGui::SliderFloat("Gravity Strength", &data.gravityStrength, 0.0f, 10.0f)) {
+    ImGui::Text("Gravity");
+    if (ImGui::SliderFloat("Strength##Gravity", &data.gravityStrength, 0.0f, 10.0f)) {
         updated = true;
     }
 

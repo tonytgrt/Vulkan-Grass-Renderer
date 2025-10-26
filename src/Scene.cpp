@@ -44,6 +44,10 @@ PhysicsParams* Scene::GetPhysicsParams() const {
     return physicsParams;
 }
 
+float Scene::GetDeltaTime() const {
+    return time.deltaTime;
+}
+
 Scene::~Scene() {
     delete physicsParams;
     vkUnmapMemory(device->GetVkDevice(), timeBufferMemory);

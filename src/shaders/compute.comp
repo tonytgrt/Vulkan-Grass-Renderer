@@ -41,7 +41,6 @@ layout(set = 2, binding = 2) buffer NumBlades {
 // Physics parameters (std140 layout - vec3 aligned to 16 bytes)
 layout(set = 3, binding = 0) uniform PhysicsParams {
     float gravityStrength;
-    // padding[3] in C++ for alignment
     vec3 windDirection;
     float windStrength;
     float windFrequency;
@@ -71,7 +70,6 @@ void main() {
     float stiffness = blade.up.w;
 
     // Use physics parameters from uniform buffer
-    // Apply gravity with environmental factor (0.25)
     vec3 gE = vec3(0.0, -physics.gravityStrength, 0.0);
     vec3 gF = gE;
 

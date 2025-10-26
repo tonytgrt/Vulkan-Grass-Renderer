@@ -44,6 +44,7 @@ public:
 
     VkBuffer GetTimeBuffer() const;
     PhysicsParams* GetPhysicsParams() const;
+    float GetDeltaTime() const;
 
     void UpdateTime();
 };
