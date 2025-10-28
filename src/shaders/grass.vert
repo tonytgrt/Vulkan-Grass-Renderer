@@ -6,36 +6,33 @@ layout(set = 1, binding = 0) uniform ModelBufferObject {
     mat4 model;
 };
 
-// TODO: Declare vertex shader inputs and outputs
-layout(set = 0, binding = 0) uniform CameraBufferObject {
-    mat4 view;
-    mat4 proj;
-} camera;
-
 layout(location = 0) in vec4 v0;
 layout(location = 1) in vec4 v1;
 layout(location = 2) in vec4 v2;
 layout(location = 3) in vec4 up;
 
-layout(location = 0) out vec4 out_v0;
-layout(location = 1) out vec4 out_v1;
-layout(location = 2) out vec4 out_v2;
-layout(location = 3) out vec4 out_up;
+layout(location = 0) out vec4 vert_v0;
+layout(location = 1) out vec4 vert_v1;
+layout(location = 2) out vec4 vert_v2;
+layout(location = 3) out vec4 vert_up;
 
 out gl_PerVertex {
     vec4 gl_Position;
-    float gl_PointSize;
-    float gl_ClipDistance[];
-    float gl_CullDistance[];
 };
 
 void main() {
-    // Pass through position for tessellation (don't transform yet)
-    gl_Position = v0;
+    float orientation = v0.w;
+    float height = v1.w;
+    float width = v2.w;
 
-    // Pass blade data to tessellation control shader
-    out_v0 = v0;
-    out_v1 = v1;
-    out_v2 = v2;
-    out_up = up;
+    vert_v0 = model * v0;
+    vert_v1 = model * v1;
+    vert_v2 = model * v2;
+    vert_up = model * up;
+
+    vert_v0.w = orientation;
+    vert_v1.w = height;
+    vert_v2.w = width;
+
+    gl_Position = vert_v0;
 }

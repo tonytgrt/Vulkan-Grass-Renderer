@@ -8,47 +8,43 @@ layout(set = 0, binding = 0) uniform CameraBufferObject {
     mat4 proj;
 } camera;
 
-// TODO: Declare tessellation evaluation shader inputs and outputs
-layout(location = 0) in vec4 in_v0[];
-layout(location = 1) in vec4 in_v1[];
-layout(location = 2) in vec4 in_v2[];
-layout(location = 3) in vec4 in_up[];
+layout(location = 0) in vec4[] v0;
+layout(location = 1) in vec4[] v1;
+layout(location = 2) in vec4[] v2;
 
-layout(location = 0) out vec3 out_normal;
-layout(location = 1) out vec3 out_color;
+layout(location = 0) out vec3 fs_nor;
+layout(location = 1) out float fs_v;
 
 void main() {
     float u = gl_TessCoord.x;
     float v = gl_TessCoord.y;
 
-	// TODO: Use u and v to parameterize along the grass blade and output positions for each vertex of the grass blade
+    vec3 p0 = v0[0].xyz;
+    vec3 p1 = v1[0].xyz;
+    vec3 p2 = v2[0].xyz;
 
-    vec3 v0 = in_v0[0].xyz;
-    vec3 v1 = in_v1[0].xyz;
-    vec3 v2 = in_v2[0].xyz;
-    vec3 up = in_up[0].xyz;
+    float orientation = v0[0].w;
+    float height = v1[0].w;
+    float width = v2[0].w;
 
-    float orientation = in_v0[0].w;
-    float height = in_v1[0].w;
-    float width = in_v2[0].w;
+    vec3 theta = normalize(vec3(-cos(orientation), 0.0, sin(orientation)));
 
-    vec3 a = v0 + (v1 - v0) * v;
-    vec3 b = v1 + (v2 - v1) * v;
-    vec3 c = a + v * (b - a);
+    //deCasteljau
+    vec3 a = mix(p0, p1, v);
+    vec3 b = mix(p1, p2, v);
+    vec3 c = mix(a, b, v);
 
-    vec3 t0 = normalize(b - a);
+    vec3 c0 = c - width * theta;
+    vec3 c1 = c + width * theta;
 
-    vec3 facing = vec3(sin(orientation), 0.0, cos(orientation));
-    vec3 bitangent = normalize(cross(t0, facing));
+    vec3 tangent = normalize(mix(p1 - p0, p2 - p1, v));
 
-    float w = (u - 0.5);
+    vec3 n = normalize(cross(tangent, theta));
+    fs_nor = n;
+    fs_v = v;
 
-    float taper = mix(1.0, 0.0, v);
+    float t = u + 0.5 * v - u * v;
+    vec3 pos = mix(c0, c1, t);
 
-    vec3 position = c + bitangent * w * width * taper;
-
-    gl_Position = camera.proj * camera.view * vec4(position, 1.0);
-
-    out_normal = normalize(cross(bitangent, t0));
-    out_color = vec3(0.2, 0.6, 0.3);
+    gl_Position = camera.proj * camera.view * vec4(pos, 1.0);
 }
