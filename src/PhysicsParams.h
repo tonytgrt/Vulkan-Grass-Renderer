@@ -8,15 +8,15 @@
 // IMPORTANT: Must match std140 layout (vec3 aligned to 16 bytes)
 struct PhysicsParamsData {
     // Gravity
-    float gravityStrength = 2.45f;
+    float gravityStrength = 9.8f;
     float padding1[3];  // Align next vec3 to 16 bytes
 
     // Wind
     glm::vec3 windDirection = glm::vec3(1.0f, 0.0f, 0.0f);
-    float windStrength = 5.0f;
+    float windStrength = 0.0f;
 
     float windFrequency = 1.0f;
-    float turbulenceStrength = 3.0f;
+    float turbulenceStrength = 0.0f;
 
     // Culling parameters
     float orientationThreshold = 0.9f;    // Orientation culling threshold
