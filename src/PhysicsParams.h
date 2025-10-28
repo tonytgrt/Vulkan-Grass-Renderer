@@ -13,10 +13,10 @@ struct PhysicsParamsData {
 
     // Wind
     glm::vec3 windDirection = glm::vec3(1.0f, 0.0f, 0.0f);
-    float windStrength = 0.0f;
+    float windStrength = 5.0f;
 
     float windFrequency = 1.0f;
-    float turbulenceStrength = 0.0f;
+    float turbulenceStrength = 3.0f;
 
     // Culling parameters
     float orientationThreshold = 0.9f;    // Orientation culling threshold

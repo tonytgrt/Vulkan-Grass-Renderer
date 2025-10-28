@@ -87,43 +87,62 @@ void main() {
     float width = blade.v2.w;
     float stiffness = blade.up.w;
 
-    // Compute blade's width direction (t1) and facing direction (f)
-    // t1 is the direction along the width of the blade
-    vec3 t1 = normalize(vec3(-cos(orientation), 0.0, sin(orientation)));
+    vec3 theta = normalize(vec3(-cos(orientation), 0.0, sin(orientation)));
 
-    // f is the facing direction (perpendicular to both width and up)
-    vec3 f = normalize(cross(t1, up));
-
-    // Environmental gravity (downward)
+    // Gravity
+    vec3 f = normalize(cross(theta, up));
     vec3 gE = vec3(0.0, -physics.gravityStrength, 0.0);
-
-    // Front-facing gravity (paper Section 4.1)
-    // gF = (1/4)||gE|| * f
     vec3 gF = 0.25 * length(gE) * f;
-
-    // Total gravity force
     vec3 gravity = gE + gF;
 
+    // Recovery
     vec3 iv2 = v0 + up * height;
-
     vec3 recoveryForce = (iv2 - v2) * stiffness;
 
-    vec3 windDir = normalize(physics.windDirection);
-    vec3 bladeDirection = f;
+    
+    // Wind force: drag-based model with spatial and temporal variation
+    // Base wind from UI parameters
+    vec3 windDirection = normalize(physics.windDirection);
+    float windMagnitude = physics.windStrength;
 
-    float alignment = max(0.0, dot(windDir, normalize(v2 - v0)));
+    // Spatial variation: create wind gusts that vary across the field
+    vec2 spatialCoord = v0.xz * 0.08;
+    float gust1 = sin(spatialCoord.x * 4.2 + totalTime * 0.7);
+    float gust2 = cos(spatialCoord.y * 3.1 + totalTime * 0.5);
+    float gustStrength = 0.6 + 0.4 * gust1 * gust2;
 
-    vec3 windDirectional = windDir * physics.windStrength * alignment;
+    // Turbulence component
+    float turbFreq = physics.windFrequency;
+    float turbAmp = physics.turbulenceStrength;
+    vec3 turbulence;
+    turbulence.x = sin(totalTime * turbFreq * 1.2 + v0.x * 0.15);
+    turbulence.y = 0.0;
+    turbulence.z = cos(totalTime * turbFreq * 0.85 + v0.z * 0.15);
+    turbulence *= turbAmp;
 
-    float freq = physics.windFrequency;
-    float turbStr = physics.turbulenceStrength;
+    // Combined wind velocity
+    vec3 windVel = windDirection * windMagnitude * gustStrength + turbulence;
 
-    float noiseX = sin(totalTime * freq + v0.x * 0.5) * cos(totalTime * freq * 0.7);
-    float noiseZ = cos(totalTime * freq + v0.z * 0.5) * sin(totalTime * freq * 0.9);
+    // Calculate effectiveness: wind pushes blade sideways
+    // When blade already points in wind direction, effect is minimal
+    float windMag = length(windVel);
+    vec3 windForce = vec3(0.0);
 
-    vec3 windTurbulence = vec3(noiseX, 0.0, noiseZ) * turbStr;
+    if (windMag > 0.001) {  // Avoid division by zero
+        vec3 bladeOrientation = normalize(v2 - v0);
+        vec3 windNormalized = windVel / windMag;
 
-    vec3 windForce = windDirectional + windTurbulence;
+        float alignment = dot(bladeOrientation, windNormalized);
+        float sidewaysEffect = 1.0 - abs(alignment);  // Max when perpendicular
+
+        // Height factor: taller blades catch more wind
+        float bladeHeight = dot(v2 - v0, up);
+        float heightRatio = bladeHeight / height;
+
+        // Final wind force
+        windForce = windVel * sidewaysEffect * heightRatio;
+    }
+    
 
     vec3 totalForce = gravity + recoveryForce + windForce;
 
@@ -131,7 +150,7 @@ void main() {
     vec3 tv2 = totalForce * deltaTime;
     v2 += tv2;
 
-    // State Validation (from paper)
+    // State Validation
     // 1. Keep blade above ground
     v2 = v2 - up * min(dot(up, v2 - v0), 0.0);
 
@@ -142,7 +161,6 @@ void main() {
     v1 = v0 + height * up * max(1.0 - l_proj / height, 0.05 * max(l_proj / height, 1.0));
 
     // 4. Maintain arc length constraint for quadratic Bezier curve
-    // For a quadratic Bezier, approximate arc length L ≈ (2*L0 + L1)/3
     float L0 = length(v2 - v0);
     float L1 = length(v1 - v0) + length(v2 - v1);
     float L = (2.0 * L0 + L1) / 3.0;
@@ -155,14 +173,14 @@ void main() {
 
     blade.v1.xyz = v1;
     blade.v2.xyz = v2;
+    blades[index] = blade;
 
     bool culled = false;
 
-    // Orientation culling
+    // Orientation culling 
     vec3 cameraPos = camera.cameraPosition;
     vec3 viewDir = normalize(cameraPos - v0);
-
-    if (abs(dot(bladeDirection, viewDir)) > physics.orientationThreshold) {
+    if (abs(dot(theta, viewDir)) > physics.orientationThreshold) {
         culled = true;
     }
 
