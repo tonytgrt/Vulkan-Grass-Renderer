@@ -8,33 +8,48 @@ layout(set = 0, binding = 0) uniform CameraBufferObject {
     mat4 proj;
 } camera;
 
-// TODO: Declare tessellation control shader inputs and outputs
-layout(location = 0) in vec4 in_v0[];
-layout(location = 1) in vec4 in_v1[];
-layout(location = 2) in vec4 in_v2[];
-layout(location = 3) in vec4 in_up[];
+in gl_PerVertex {
+    vec4 gl_Position;
+} gl_in[];
 
-layout(location = 0) out vec4 out_v0[1];
-layout(location = 1) out vec4 out_v1[1];
-layout(location = 2) out vec4 out_v2[1];
-layout(location = 3) out vec4 out_up[1];
+out gl_PerVertex {
+    vec4 gl_Position;
+} gl_out[];
+
+layout(location = 0) in vec4[] in_v0;
+layout(location = 1) in vec4[] in_v1;
+layout(location = 2) in vec4[] in_v2;
+layout(location = 3) in vec4[] in_up;
+
+layout(location = 0) out vec4[] out_v0;
+layout(location = 1) out vec4[] out_v1;
+layout(location = 2) out vec4[] out_v2;
 
 void main() {
-	// Don't move the origin location of the patch
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
 
-	// TODO: Write any shader outputs
     out_v0[gl_InvocationID] = in_v0[gl_InvocationID];
     out_v1[gl_InvocationID] = in_v1[gl_InvocationID];
     out_v2[gl_InvocationID] = in_v2[gl_InvocationID];
-    out_up[gl_InvocationID] = in_up[gl_InvocationID];
 
-	// TODO: Set level of tesselation
-    gl_TessLevelInner[0] = 5.0;
-    gl_TessLevelInner[1] = 1.0;
+    vec3 camera_position = inverse(camera.view)[3].xyz;
+    vec3 blade_root = in_v0[gl_InvocationID].xyz;
+    vec3 up_direction = normalize(in_up[gl_InvocationID].xyz);
 
-    gl_TessLevelOuter[0] = 1.0;
-    gl_TessLevelOuter[1] = 5.0;
-    gl_TessLevelOuter[2] = 1.0;
-    gl_TessLevelOuter[3] = 5.0;
+    vec3 to_camera = blade_root - camera_position;
+    float ground_distance = length(to_camera - up_direction * dot(to_camera, up_direction));
+
+    float max_tess_level = 10.0;
+    float min_tess_level = 2.0;
+    float falloff_rate = 0.15;
+
+    float tess_level = max_tess_level * exp(-falloff_rate * ground_distance);
+    tess_level = clamp(tess_level, min_tess_level, max_tess_level);
+
+    gl_TessLevelInner[0] = tess_level;
+    gl_TessLevelInner[1] = tess_level;
+    gl_TessLevelOuter[0] = tess_level;
+    gl_TessLevelOuter[1] = tess_level;
+    gl_TessLevelOuter[2] = tess_level;
+    gl_TessLevelOuter[3] = tess_level;
 }
