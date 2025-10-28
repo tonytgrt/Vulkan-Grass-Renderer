@@ -87,17 +87,22 @@ void main() {
     float width = blade.v2.w;
     float stiffness = blade.up.w;
 
+    // Calculate blade facing direction
+    float theta = orientation;
+    vec3 bladeDirection = vec3(sin(theta), 0.0, cos(theta));
+
     // Use physics parameters from uniform buffer
     vec3 gE = vec3(0.0, -physics.gravityStrength, 0.0);
     vec3 gF = gE;
 
-    vec3 iv2 = v0 + up * height;
+    // Calculate natural resting position with forward curve (not straight up)
+    // Blades naturally lean forward, not perfectly vertical
+    float naturalBendAmount = 0.1;  // Match initialization bend amount
+    vec3 iv2 = v0 + up * height + bladeDirection * height * naturalBendAmount;
 
     vec3 recoveryForce = (iv2 - v2) * stiffness;
 
     vec3 windDir = normalize(physics.windDirection);
-    float theta = orientation;
-    vec3 bladeDirection = vec3(sin(theta), 0.0, cos(theta));
 
     float alignment = max(0.0, dot(windDir, normalize(v2 - v0)));
 
@@ -125,7 +130,12 @@ void main() {
         v2_new = v0 + normalize(v2_new - v0) * height;
     }
 
-    vec3 v1_new = v0 + height * up * 0.5 + (v2_new - v0) * 0.5;
+    // Correct v1 to maintain Bezier curve shape
+    // CRITICAL: v1 must be OFF the line between v0 and v2 to create a visible curve!
+    // Position v1 as the midpoint between v0 and v2, then add perpendicular offset
+    vec3 midpoint = v0 + 0.5 * (v2_new - v0);
+    // Add offset in the "up" direction to push v1 away from the v0-v2 line
+    vec3 v1_new = midpoint + 0.2 * height * normalize(up);
 
     blade.v1.xyz = v1_new;
     blade.v2.xyz = v2_new;
