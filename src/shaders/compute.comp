@@ -94,7 +94,13 @@ void main() {
     vec3 theta = normalize(vec3(-cos(orientation), 0.0, sin(orientation)));
 
     // Gravity
-    vec3 f = normalize(cross(theta, up));
+    vec3 f = cross(theta, up);
+    float fLen = length(f);
+    if (fLen > 0.0001) {
+        f = f / fLen;
+    } else {
+        f = vec3(1.0, 0.0, 0.0);  // Fallback direction
+    }
     vec3 gE = vec3(0.0, -physics.gravityStrength, 0.0);
     vec3 gF = 0.25 * length(gE) * f;
     vec3 gravity = gE + gF;
@@ -132,17 +138,22 @@ void main() {
     vec3 windForce = vec3(0.0);
 
     if (windMag > 0.001) {  // Avoid division by zero
-        vec3 bladeOrientation = normalize(v2 - v0);
-        vec3 windNormalized = windVel / windMag;
+        vec3 bladeDir = v2 - v0;
+        float bladeDirLen = length(bladeDir);
 
-        float alignment = dot(bladeOrientation, windNormalized);
-        float sidewaysEffect = 1.0 - abs(alignment);  // Max when perpendicular
+        if (bladeDirLen > 0.0001) {  // Avoid normalizing zero-length vector
+            vec3 bladeOrientation = bladeDir / bladeDirLen;
+            vec3 windNormalized = windVel / windMag;
 
-        // Height factor: taller blades catch more wind
-        float bladeHeight = dot(v2 - v0, up);
-        float heightRatio = bladeHeight / height;
+            float alignment = dot(bladeOrientation, windNormalized);
+            float sidewaysEffect = 1.0 - abs(alignment);  // Max when perpendicular
 
-        windForce = windVel * sidewaysEffect * heightRatio;
+            // Height factor: taller blades catch more wind
+            float bladeHeight = dot(v2 - v0, up);
+            float heightRatio = bladeHeight / height;
+
+            windForce = windVel * sidewaysEffect * heightRatio;
+        }
     }
 
     vec3 totalForce = gravity + recoveryForce + windForce;
@@ -155,15 +166,20 @@ void main() {
 
     // Adjust v1 pos based on proj
     float lProj = length(v2 - v0 - up * dot(up, v2 - v0));
-    v1 = v0 + height * up * max(1.0 - lProj / height, 0.05 * max(lProj / height, 1.0));
+    if (height > 0.0001) {
+        v1 = v0 + height * up * max(1.0 - lProj / height, 0.05 * max(lProj / height, 1.0));
+    } else {
+        v1 = v0 + up * 0.5;  // Default to halfway up
+    }
 
-    // 4. Maintain arc length 
+    // Maintain arc length
     float L0 = length(v2 - v0);
     float L1 = length(v1 - v0) + length(v2 - v1);
     float L = (2.0 * L0 + L1) / 3.0;
 
-    // 5. Scale to maintain height
-    float r = height / L;
+    // Scale to maintain height
+    // Prevent division by zero
+    float r = (L > 0.0001) ? (height / L) : 1.0;
     vec3 temp = v1;
     v1 = v0 + r * (v1 - v0);
     v2 = v1 + r * (v2 - temp);
@@ -179,9 +195,13 @@ void main() {
 
     // Orientation culling
     if (physics.enableOrientationCulling != 0) {
-        vec3 viewDir = normalize(cameraPos - v0);
-        if (abs(dot(theta, viewDir)) > physics.orientationThreshold) {
-            culled = true;
+        vec3 viewVec = cameraPos - v0;
+        float viewVecLen = length(viewVec);
+        if (viewVecLen > 0.0001) {
+            vec3 viewDir = viewVec / viewVecLen;
+            if (abs(dot(theta, viewDir)) > physics.orientationThreshold) {
+                culled = true;
+            }
         }
     }
 
@@ -190,20 +210,25 @@ void main() {
         vec4 clipV0 = camera.proj * camera.view * vec4(v0, 1.0);
         vec4 clipV2 = camera.proj * camera.view * vec4(v2, 1.0);
 
-        vec3 ndcV0 = clipV0.xyz / clipV0.w;
-        vec3 ndcV2 = clipV2.xyz / clipV2.w;
-
-        float tolerance = physics.frustumTolerance;
-
-        bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
-        bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
-        bool outsideBottom = (ndcV0.y < -1.0 - tolerance) && (ndcV2.y < -1.0 - tolerance);
-        bool outsideTop = (ndcV0.y > 1.0 + tolerance) && (ndcV2.y > 1.0 + tolerance);
-        bool outsideNear = (ndcV0.z < -1.0 - tolerance) && (ndcV2.z < -1.0 - tolerance);
-        bool outsideFar = (ndcV0.z > 1.0 + tolerance) && (ndcV2.z > 1.0 + tolerance);
-
-        if (outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar) {
+        // Prevent division by zero in perspective divide
+        if (abs(clipV0.w) < 0.0001 || abs(clipV2.w) < 0.0001) {
             culled = true;
+        } else {
+            vec3 ndcV0 = clipV0.xyz / clipV0.w;
+            vec3 ndcV2 = clipV2.xyz / clipV2.w;
+
+            float tolerance = physics.frustumTolerance;
+
+            bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
+            bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
+            bool outsideBottom = (ndcV0.y < -1.0 - tolerance) && (ndcV2.y < -1.0 - tolerance);
+            bool outsideTop = (ndcV0.y > 1.0 + tolerance) && (ndcV2.y > 1.0 + tolerance);
+            bool outsideNear = (ndcV0.z < -1.0 - tolerance) && (ndcV2.z < -1.0 - tolerance);
+            bool outsideFar = (ndcV0.z > 1.0 + tolerance) && (ndcV2.z > 1.0 + tolerance);
+
+            if (outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar) {
+                culled = true;
+            }
         }
     }
 
@@ -213,7 +238,7 @@ void main() {
 
         if (distanceToCamera > physics.maxDistance) {
             culled = true;
-        } else {
+        } else if (physics.maxDistance > 0.0001 && physics.numBuckets > 0.0) {
             int bucketIndex = int(floor(physics.numBuckets * distanceToCamera / physics.maxDistance));
             bucketIndex = min(bucketIndex, int(physics.numBuckets) - 1);
 

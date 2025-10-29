@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "Scene.h"
 #include "Image.h"
+#include <iostream>
 
 Device* device;
 SwapChain* swapChain;
@@ -211,6 +212,9 @@ int main() {
     delete renderer;
     delete swapChain;
     delete device;
+
+    vkDestroySurfaceKHR(instance->GetVkInstance(), surface, nullptr);
+
     delete instance;
     DestroyWindow();
     return 0;

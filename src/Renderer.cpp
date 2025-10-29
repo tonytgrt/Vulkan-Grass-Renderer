@@ -1091,6 +1091,11 @@ void Renderer::RecordComputeCommandBuffer() {
 void Renderer::RecordCommandBuffers() {
     // If command buffers already exist, reset the pool for efficient re-recording
     if (!commandBuffers.empty()) {
+        // IMPORTANT: Wait for the GPU to finish executing commands before resetting the pool
+        // Without this, we get a race condition where we reset the pool while GPU is still using it
+        // This is especially problematic in Release mode where the CPU executes faster
+        vkQueueWaitIdle(device->GetQueue(QueueFlags::Graphics));
+
         // Reset the entire command pool
         vkResetCommandPool(logicalDevice, graphicsCommandPool, 0);
     }
