@@ -30,6 +30,10 @@ The grass rendering system uses a two-pipeline approach:
 
 The renderer can handle blade counts from 1 to over 1 million (2^20) with interactive frame rates on modern GPUs, making it suitable for real-time applications like games and simulations.
 
+## Build Changes
+
+Updated various CMakeLists.txt to minimum v3.10. Included ImGUI in build configuration.
+
 ## Core Features
 
 ### Grass Tessellation
@@ -56,7 +60,11 @@ struct Blade {
 
 This Bezier representation allows smooth, curved grass blades while requiring only 64 bytes per blade. The quadratic curve formula `P(t) = (1-t)² * v0 + 2(1-t)t * v1 + t² * v2` generates natural-looking shapes.
 
+
 #### Vulkan Tessellation Pipeline
+
+Grass Without any Force
+![](/img/s_no_force.png)
 
 The graphics pipeline uses **hardware tessellation** to dynamically generate blade geometry from Bezier curves ([grass.tesc](src/shaders/grass.tesc), [grass.tese](src/shaders/grass.tese)):
 
@@ -109,6 +117,8 @@ The compute shader ([compute.comp](src/shaders/compute.comp)) applies physics fo
 
 #### Gravity
 
+![](img/s_gravity.png)
+
 Gravity pulls blades downward with two components ([compute.comp#L95-L106](src/shaders/compute.comp#L95-L106)):
 
 ```glsl
@@ -142,6 +152,8 @@ This force ensures blades don't collapse permanently under gravity or wind.
 
 #### Wind
 
+![](img/s_wind.gif)
+
 Wind simulation combines directional wind with turbulence for realistic motion ([compute.comp#L113-L157](src/shaders/compute.comp#L113-L157)):
 
 **Directional Wind with Spatial Variation**:
@@ -166,6 +178,8 @@ turbulence *= turbAmp;
 ```
 
 High-frequency noise creates the chaotic, swirling motion characteristic of wind.
+
+![](img/s_wind_turb.gif)
 
 **Drag-Based Application**:
 
@@ -229,6 +243,8 @@ The compute shader performs three culling tests to eliminate non-visible blades 
 
 #### Orientation Culling
 
+![](img/s_orien.gif)
+
 Culls blades oriented edge-on to the camera (thin profile, barely visible) ([compute.comp#L196-L206](src/shaders/compute.comp#L196-L206)):
 
 ```glsl
@@ -244,7 +260,6 @@ if (abs(dot(theta, viewDir)) > orientationThreshold) {
   * ≈ ±1: Blade is edge-on (thin sliver visible)
 * `threshold = 0.9`: Culls blades within ~25° of edge-on orientation
 
-Typically culls ~10-20% of blades with minimal visual impact since edge-on blades contribute negligibly to the final image.
 
 #### View-Frustum Culling
 
@@ -266,9 +281,10 @@ bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
 * Culls only if **both** endpoints are outside the **same** frustum plane
 * `tolerance = 0.1`: Small margin prevents popping at screen edges
 
-This is the most effective culling technique, often eliminating 50-70% of blades depending on camera view. Uses Vulkan's hardware-accelerated matrix transforms for efficiency.
 
 #### Distance Culling
+
+![](img/s_dist.gif)
 
 Implements **probabilistic distance-based culling** to reduce density of distant grass ([compute.comp#L235-L252](src/shaders/compute.comp#L235-L252)):
 
@@ -303,8 +319,6 @@ if (distanceToCamera > maxDistance) {
 
 The hash function ensures even distribution without visible patterns. Distant grass appears naturally less dense without perceptible popping.
 
-**Combined Effect**: With all three culling techniques enabled, typical performance improvement is **2-3x FPS** with negligible visual quality loss.
-
 ## Extra Features
 
 ### Interactive ImGui Control Panel
@@ -312,6 +326,8 @@ The hash function ensures even distribution without visible patterns. Distant gr
 A comprehensive 500px-wide fixed sidebar panel provides real-time control and performance monitoring during rendering ([Renderer.cpp#L1398-L1647](src/Renderer.cpp#L1398-L1647)). The panel is non-movable and non-resizable, keeping it visible while allowing full view of the 1920x1080 render area.
 
 #### Real-time Performance Tracking
+
+![](img/s_gui_perf.gif)
 
 The renderer implements sophisticated performance monitoring with multiple metrics updated every 0.2 seconds for readability ([Renderer.cpp#L1387-L1508](src/Renderer.cpp#L1387-L1508)):
 
@@ -359,6 +375,8 @@ if (timeSinceLastImGuiUpdate >= IMGUI_UPDATE_INTERVAL) {
 Cached values prevent visual flickering while maintaining accurate measurements. Metrics automatically reset when any parameter changes, ensuring measurements reflect the current configuration.
 
 #### Real-time Key Parameters Adjustment
+
+![](img/s_gui_param.gif)
 
 All physics and rendering parameters can be adjusted in real-time with immediate visual feedback:
 
@@ -440,6 +458,8 @@ All parameters update the GPU uniform buffer immediately via `params->UpdateBuff
 
 ### Automated Performance Testing
 
+![](img/s_gui_test.png)
+
 The renderer includes a fully automated performance benchmarking system with one-click execution ([Renderer.cpp#L1687-L1792](src/Renderer.cpp#L1687-L1792)):
 
 **Test Matrix**:
@@ -509,9 +529,9 @@ std::string GetGPUName() {
 }
 ```
 
-### Python Performance Analysis Script
+### Python Graphing Script
 
-A companion Python script ([analyze_performance.py](files/analyze_performance.py)) generates publication-quality visualizations from test data:
+A companion Python script ([analyze_performance.py](files/analyze_performance.py)) generates publication-quality visualizations from test data.
 
 **Usage**:
 
@@ -774,6 +794,6 @@ All third-party dependencies are included as Git submodules or system requiremen
 3. **Tessellation Shaders in Vulkan**. Vulkan Tutorial and Specification.
    * Reference for implementing hardware tessellation pipeline with control and evaluation shaders
 
-4. **CIS 565: GPU Programming and Architecture**. University of Pennsylvania.
-   * Course: [https://cis565-fall-2024.github.io/](https://cis565-fall-2024.github.io/)
+4. **CIS 5650: GPU Programming and Architecture**. University of Pennsylvania.
+   * Course: [https://cis5650-fall-2025.github.io/](https://cis5650-fall-2025.github.io/)
    * Base code framework and project structure provided by course staff
