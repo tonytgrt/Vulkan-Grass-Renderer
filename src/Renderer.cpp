@@ -13,6 +13,19 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <fstream>
+#include <sstream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <intrin.h>
+#include <direct.h>  // for _getcwd
+#else
+#include <unistd.h>  // for getcwd
+#endif
 
 static constexpr unsigned int WORKGROUP_SIZE = 32;
 static constexpr unsigned int RENDER_WIDTH = 1920;  // Render viewport width (ImGui panel is 500px on right)
@@ -1117,7 +1130,7 @@ void Renderer::RecordCommandBuffers() {
         renderPassInfo.renderArea.extent = swapChain->GetVkExtent();
 
         std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0].color = { 0.0f, 0.0f, 0.0f, 1.0f };
+        clearValues[0].color = { 0.529f, 0.808f, 0.922f, 1.0f };  // Sky blue background
         clearValues[1].depthStencil = { 1.0f, 0 };
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
@@ -1192,13 +1205,20 @@ void Renderer::RecordCommandBuffers() {
 }
 
 void Renderer::Frame() {
+    // Update automated performance testing
+    float deltaTime = scene->GetDeltaTime();
+    UpdatePerformanceTesting(deltaTime);
+
     // Check if blade count has changed and re-record compute command buffer if needed
-    uint32_t currentBladeCount = scene->GetPhysicsParams()->GetData().activeBladeCount;
-    if (currentBladeCount != lastBladeCount) {
-        vkDeviceWaitIdle(logicalDevice);
-        vkFreeCommandBuffers(logicalDevice, computeCommandPool, 1, &computeCommandBuffer);
-        RecordComputeCommandBuffer();
-        lastBladeCount = currentBladeCount;
+    // (Skip if testing is running as it handles this internally)
+    if (testState == TestState::Idle) {
+        uint32_t currentBladeCount = scene->GetPhysicsParams()->GetData().activeBladeCount;
+        if (currentBladeCount != lastBladeCount) {
+            vkDeviceWaitIdle(logicalDevice);
+            vkFreeCommandBuffers(logicalDevice, computeCommandPool, 1, &computeCommandBuffer);
+            RecordComputeCommandBuffer();
+            lastBladeCount = currentBladeCount;
+        }
     }
 
     VkSubmitInfo computeSubmitInfo = {};
@@ -1384,6 +1404,42 @@ void Renderer::RenderImGui() {
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
     ImGui::Begin("Physics & Culling Parameters", nullptr, window_flags);
 
+    // Automated Performance Testing Section
+    ImGui::Text("Automated Performance Testing");
+
+    if (testState == TestState::Idle) {
+        if (ImGui::Button("Start Testing", ImVec2(200, 30))) {
+            StartPerformanceTesting();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Run automated performance tests\nTests blade counts 2^13 to 2^20\nwith all culling combinations\n5 second measurement per config");
+        }
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        ImGui::Button("Testing in Progress...", ImVec2(200, 30));
+        ImGui::PopStyleColor();
+
+        // Show progress
+        float progress = (float)currentTestIndex / (float)testConfigs.size();
+        ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
+
+        if (currentTestIndex < testConfigs.size()) {
+            const TestConfig& config = testConfigs[currentTestIndex];
+            ImGui::Text("Blade Count: %u", config.bladeCount);
+            ImGui::Text("Orientation: %s, Frustum: %s, Distance: %s",
+                       config.orientationCulling ? "ON" : "OFF",
+                       config.viewFrustumCulling ? "ON" : "OFF",
+                       config.distanceCulling ? "ON" : "OFF");
+            ImGui::Text("Time: %.1f / %.1f seconds", testTimer, testMeasurementDuration);
+        }
+
+        // Show file path
+        ImGui::Spacing();
+        ImGui::TextWrapped("Saving to: %s", testCsvFilePath.c_str());
+    }
+
+    ImGui::Separator();
+
     // Update performance metrics (collect data every frame)
     float deltaTime = scene->GetDeltaTime();
     UpdatePerformanceMetrics(deltaTime);
@@ -1451,6 +1507,11 @@ void Renderer::RenderImGui() {
     PhysicsParams* params = scene->GetPhysicsParams();
     PhysicsParamsData& data = params->GetData();
     bool updated = false;
+
+    // Disable controls during automated testing
+    if (testState != TestState::Idle) {
+        ImGui::BeginDisabled();
+    }
 
     // Gravity
     ImGui::Text("Gravity");
@@ -1569,8 +1630,228 @@ void Renderer::RenderImGui() {
         ResetPerformanceMetrics();  // Reset performance tracking when parameters change
     }
 
+    // Re-enable controls after testing section
+    if (testState != TestState::Idle) {
+        ImGui::EndDisabled();
+    }
+
     ImGui::End();
 
     // Render ImGui
     ImGui::Render();
+}
+
+std::string Renderer::GetCPUName() {
+#ifdef _WIN32
+    int cpuInfo[4] = { 0 };
+    char cpuBrandString[0x40] = { 0 };
+
+    __cpuid(cpuInfo, 0x80000000);
+    unsigned int nExIds = cpuInfo[0];
+
+    for (unsigned int i = 0x80000000; i <= nExIds && i <= 0x80000004; ++i) {
+        __cpuid(cpuInfo, i);
+        if (i == 0x80000002) {
+            memcpy(cpuBrandString, cpuInfo, sizeof(cpuInfo));
+        } else if (i == 0x80000003) {
+            memcpy(cpuBrandString + 16, cpuInfo, sizeof(cpuInfo));
+        } else if (i == 0x80000004) {
+            memcpy(cpuBrandString + 32, cpuInfo, sizeof(cpuInfo));
+        }
+    }
+
+    std::string cpuName(cpuBrandString);
+    // Trim whitespace
+    size_t start = cpuName.find_first_not_of(" \t\r\n");
+    size_t end = cpuName.find_last_not_of(" \t\r\n");
+    if (start != std::string::npos && end != std::string::npos) {
+        cpuName = cpuName.substr(start, end - start + 1);
+    }
+    return cpuName;
+#else
+    return "Unknown_CPU";
+#endif
+}
+
+std::string Renderer::GetGPUName() {
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device->GetInstance()->GetPhysicalDevice(), &deviceProperties);
+    return std::string(deviceProperties.deviceName);
+}
+
+void Renderer::StartPerformanceTesting() {
+    // Generate test configurations
+    testConfigs.clear();
+
+    // Test blade counts from 2^13 to 2^20
+    std::vector<uint32_t> bladeCounts;
+    for (int power = 13; power <= 20; power++) {
+        bladeCounts.push_back(1 << power);
+    }
+
+    // For each blade count, test 5 culling configurations
+    for (uint32_t bladeCount : bladeCounts) {
+        // 1. All culling off
+        testConfigs.push_back({bladeCount, false, false, false});
+
+        // 2. Only orientation culling on
+        testConfigs.push_back({bladeCount, true, false, false});
+
+        // 3. Only view-frustum culling on
+        testConfigs.push_back({bladeCount, false, true, false});
+
+        // 4. Only distance culling on
+        testConfigs.push_back({bladeCount, false, false, true});
+
+        // 5. All culling on
+        testConfigs.push_back({bladeCount, true, true, true});
+    }
+
+    // Create CSV file with timestamp and hardware info
+    auto now = std::chrono::system_clock::now();
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_now;
+    localtime_s(&tm_now, &time_t_now);
+
+    std::string cpuName = GetCPUName();
+    std::string gpuName = GetGPUName();
+
+    // Clean names for filename (replace spaces and special chars with underscores)
+    auto cleanName = [](std::string name) {
+        for (char& c : name) {
+            if (!std::isalnum(c)) c = '_';
+        }
+        return name;
+    };
+
+    std::ostringstream filename;
+    filename << "performance_test_"
+             << cleanName(cpuName) << "_"
+             << cleanName(gpuName) << "_"
+             << std::put_time(&tm_now, "%Y%m%d_%H%M%S")
+             << ".csv";
+
+    // Get current working directory for debugging
+    char cwd[1024];
+    std::string fullPath;
+    #ifdef _WIN32
+        if (_getcwd(cwd, sizeof(cwd)) != NULL) {
+            fullPath = std::string(cwd) + "\\" + filename.str();
+        } else {
+            fullPath = filename.str();
+        }
+    #else
+        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            fullPath = std::string(cwd) + "/" + filename.str();
+        } else {
+            fullPath = filename.str();
+        }
+    #endif
+
+    testCsvFilePath = fullPath;
+    testCsvFile.open(testCsvFilePath);
+
+    if (!testCsvFile.is_open()) {
+        testState = TestState::Idle;
+        printf("ERROR: Failed to create CSV file at: %s\n", testCsvFilePath.c_str());
+        return;
+    }
+
+    printf("Performance test started. Results will be saved to:\n%s\n", testCsvFilePath.c_str());
+
+    // Write CSV header
+    testCsvFile << "Blade Count,All Culling Off,Only Orientation,Only View-Frustum,Only Distance,All Culling On" << std::endl;
+
+    // Start testing
+    testState = TestState::ChangingConfig;
+    currentTestIndex = 0;
+    testTimer = 0.0f;
+    testFpsSamples.clear();
+}
+
+void Renderer::UpdatePerformanceTesting(float deltaTime) {
+    if (testState == TestState::Idle) return;
+
+    testTimer += deltaTime;
+
+    if (testState == TestState::ChangingConfig) {
+        // Check if all tests are complete
+        if (currentTestIndex >= testConfigs.size()) {
+            testCsvFile.close();
+            testState = TestState::Idle;
+            printf("Performance testing complete! CSV file saved.\n");
+            return;
+        }
+
+        // Apply new test configuration
+        const TestConfig& config = testConfigs[currentTestIndex];
+        PhysicsParamsData& data = scene->GetPhysicsParams()->GetData();
+
+        data.activeBladeCount = config.bladeCount;
+        data.enableOrientationCulling = config.orientationCulling ? 1 : 0;
+        data.enableViewFrustumCulling = config.viewFrustumCulling ? 1 : 0;
+        data.enableDistanceCulling = config.distanceCulling ? 1 : 0;
+
+        scene->GetPhysicsParams()->UpdateBuffer();
+
+        // Re-record compute command buffer if blade count changed
+        if (currentTestIndex == 0 || config.bladeCount != testConfigs[currentTestIndex - 1].bladeCount) {
+            vkDeviceWaitIdle(logicalDevice);
+            vkFreeCommandBuffers(logicalDevice, computeCommandPool, 1, &computeCommandBuffer);
+            RecordComputeCommandBuffer();
+            lastBladeCount = config.bladeCount;
+        }
+
+        // Reset performance metrics
+        ResetPerformanceMetrics();
+        testFpsSamples.clear();
+        testTimer = 0.0f;
+
+        // Start measuring
+        testState = TestState::Measuring;
+    }
+    else if (testState == TestState::Measuring) {
+        // Collect FPS samples
+        if (deltaTime > 0.0f) {
+            testFpsSamples.push_back(1.0f / deltaTime);
+        }
+
+        // Check if measurement window is complete
+        if (testTimer >= testMeasurementDuration) {
+            // Calculate average FPS
+            float avgFps = 0.0f;
+            if (!testFpsSamples.empty()) {
+                for (float fps : testFpsSamples) {
+                    avgFps += fps;
+                }
+                avgFps /= testFpsSamples.size();
+            }
+
+            // Write result to CSV
+            WriteTestResultToCSV(testConfigs[currentTestIndex], avgFps);
+
+            // Move to next test
+            currentTestIndex++;
+            testState = TestState::ChangingConfig;
+            testTimer = 0.0f;
+        }
+    }
+}
+
+void Renderer::WriteTestResultToCSV(const TestConfig& config, float avgFps) {
+    // Determine which column this result belongs to
+    static uint32_t lastBladeCount = 0;
+
+    if (config.bladeCount != lastBladeCount) {
+        // New blade count - start new row
+        if (lastBladeCount != 0) {
+            testCsvFile << std::endl;
+        }
+        testCsvFile << config.bladeCount;
+        lastBladeCount = config.bladeCount;
+    }
+
+    // Write FPS to appropriate column
+    testCsvFile << "," << avgFps;
+    testCsvFile.flush();
 }

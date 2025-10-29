@@ -4,6 +4,9 @@
 #include "SwapChain.h"
 #include "Scene.h"
 #include "Camera.h"
+#include <fstream>
+#include <vector>
+#include <string>
 
 class Renderer {
 public:
@@ -113,4 +116,34 @@ private:
 
     void ResetPerformanceMetrics();
     void UpdatePerformanceMetrics(float deltaTime);
+
+    // Automated performance testing
+    enum class TestState {
+        Idle,
+        Running,
+        ChangingConfig,
+        Measuring
+    };
+
+    struct TestConfig {
+        uint32_t bladeCount;
+        bool orientationCulling;
+        bool viewFrustumCulling;
+        bool distanceCulling;
+    };
+
+    TestState testState = TestState::Idle;
+    std::vector<TestConfig> testConfigs;
+    size_t currentTestIndex = 0;
+    float testTimer = 0.0f;
+    float testMeasurementDuration = 5.0f;  // 5 second measurement window
+    std::vector<float> testFpsSamples;
+    std::ofstream testCsvFile;
+    std::string testCsvFilePath;
+
+    void StartPerformanceTesting();
+    void UpdatePerformanceTesting(float deltaTime);
+    void WriteTestResultToCSV(const TestConfig& config, float avgFps);
+    std::string GetCPUName();
+    std::string GetGPUName();
 };
