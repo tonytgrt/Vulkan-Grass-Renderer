@@ -14,7 +14,7 @@
 static constexpr unsigned int WORKGROUP_SIZE = 32;
 
 Renderer::Renderer(Device* device, SwapChain* swapChain, Scene* scene, Camera* camera)
-  : device(device),
+    : device(device),
     logicalDevice(device->GetVkDevice()),
     swapChain(swapChain),
     scene(scene),
@@ -959,11 +959,11 @@ void Renderer::CreateFrameResources() {
     );
 
     depthImageView = Image::CreateView(device, depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-    
+
     // Transition the image for use as depth-stencil
     Image::TransitionLayout(device, graphicsCommandPool, depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
-    
+
     // CREATE FRAMEBUFFERS
     framebuffers.resize(swapChain->GetCount());
     for (size_t i = 0; i < swapChain->GetCount(); i++) {
@@ -1071,7 +1071,8 @@ void Renderer::RecordCommandBuffers() {
     if (!commandBuffers.empty()) {
         // Reset the entire command pool
         vkResetCommandPool(logicalDevice, graphicsCommandPool, 0);
-    } else {
+    }
+    else {
         // First time: allocate command buffers
         commandBuffers.resize(swapChain->GetCount());
 
