@@ -91,4 +91,16 @@ private:
 
     std::vector<VkCommandBuffer> commandBuffers;
     VkCommandBuffer computeCommandBuffer;
+
+    uint32_t lastBladeCount = 1 << 20; 
+
+    // FPS and frame time tracking
+    static constexpr int FRAME_TIME_HISTORY_SIZE = 1000;  
+    std::vector<float> frameTimeHistory;
+    std::vector<float> fpsHistory;
+    int frameTimeIndex = 0;
+    bool frameTimeHistoryFilled = false;
+
+    void ResetPerformanceMetrics();
+    void UpdatePerformanceMetrics(float deltaTime);
 };

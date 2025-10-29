@@ -11,6 +11,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
+#include <algorithm>
+#include <cfloat>
+
 static constexpr unsigned int WORKGROUP_SIZE = 32;
 
 Renderer::Renderer(Device* device, SwapChain* swapChain, Scene* scene, Camera* camera)
@@ -41,6 +44,10 @@ Renderer::Renderer(Device* device, SwapChain* swapChain, Scene* scene, Camera* c
     InitImGui();
     RecordCommandBuffers();
     RecordComputeCommandBuffer();
+
+    // Initialize frame time tracking
+    frameTimeHistory.resize(FRAME_TIME_HISTORY_SIZE, 0.0f);
+    fpsHistory.resize(FRAME_TIME_HISTORY_SIZE, 0.0f);
 }
 
 void Renderer::CreateCommandPools() {
@@ -1055,9 +1062,10 @@ void Renderer::RecordComputeCommandBuffer() {
         // Bind compute descriptor set (Set 2) for this Blades object
         vkCmdBindDescriptorSets(computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 2, 1, &computeDescriptorSets[i], 0, nullptr);
 
-        // Dispatch compute shader
-        // NUM_BLADES / WORKGROUP_SIZE workgroups in X dimension
-        vkCmdDispatch(computeCommandBuffer, NUM_BLADES / WORKGROUP_SIZE, 1, 1);
+        // Dispatch compute shader using active blade count
+        uint32_t activeBladeCount = scene->GetPhysicsParams()->GetData().activeBladeCount;
+        uint32_t numWorkGroups = (activeBladeCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+        vkCmdDispatch(computeCommandBuffer, numWorkGroups, 1, 1);
     }
 
     // ~ End recording ~
@@ -1183,6 +1191,14 @@ void Renderer::RecordCommandBuffers() {
 }
 
 void Renderer::Frame() {
+    // Check if blade count has changed and re-record compute command buffer if needed
+    uint32_t currentBladeCount = scene->GetPhysicsParams()->GetData().activeBladeCount;
+    if (currentBladeCount != lastBladeCount) {
+        vkDeviceWaitIdle(logicalDevice);
+        vkFreeCommandBuffers(logicalDevice, computeCommandPool, 1, &computeCommandBuffer);
+        RecordComputeCommandBuffer();
+        lastBladeCount = currentBladeCount;
+    }
 
     VkSubmitInfo computeSubmitInfo = {};
     computeSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1328,23 +1344,90 @@ void Renderer::CleanupImGui() {
     vkDestroyDescriptorPool(logicalDevice, imguiDescriptorPool, nullptr);
 }
 
+void Renderer::ResetPerformanceMetrics() {
+    frameTimeIndex = 0;
+    frameTimeHistoryFilled = false;
+    std::fill(frameTimeHistory.begin(), frameTimeHistory.end(), 0.0f);
+    std::fill(fpsHistory.begin(), fpsHistory.end(), 0.0f);
+}
+
+void Renderer::UpdatePerformanceMetrics(float deltaTime) {
+    // Update circular buffer
+    frameTimeHistory[frameTimeIndex] = deltaTime * 1000.0f;  // Convert to ms
+    fpsHistory[frameTimeIndex] = (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f;
+
+    frameTimeIndex = (frameTimeIndex + 1) % FRAME_TIME_HISTORY_SIZE;
+    if (frameTimeIndex == 0) {
+        frameTimeHistoryFilled = true;
+    }
+}
+
 void Renderer::RenderImGui() {
     // Start new ImGui frame
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(550, 700), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
 
     ImGui::Begin("Physics & Culling Parameters");
 
-    // Display performance metrics
+    // Update performance metrics
     float deltaTime = scene->GetDeltaTime();
-    float fps = (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f;
-    ImGui::Text("Performance");
-    ImGui::Text("FPS: %.1f", fps);
-    ImGui::Text("Frame Time: %.3f ms", deltaTime * 1000.0f);
+    UpdatePerformanceMetrics(deltaTime);
+
+    // Calculate statistics
+    int sampleCount = frameTimeHistoryFilled ? FRAME_TIME_HISTORY_SIZE : frameTimeIndex;
+    float avgFps = 0.0f;
+    float onePercentLowFps = 0.0f;
+
+    if (sampleCount > 0) {
+        // Calculate average FPS
+        float sumFps = 0.0f;
+        for (int i = 0; i < sampleCount; i++) {
+            sumFps += fpsHistory[i];
+        }
+        avgFps = sumFps / sampleCount;
+
+        // Calculate 1% low FPS
+        std::vector<float> sortedFps(fpsHistory.begin(), fpsHistory.begin() + sampleCount);
+        std::sort(sortedFps.begin(), sortedFps.end());
+
+        int onePercentCount = std::max(1, sampleCount / 100);
+        float sumLowFps = 0.0f;
+        for (int i = 0; i < onePercentCount; i++) {
+            sumLowFps += sortedFps[i];
+        }
+        onePercentLowFps = sumLowFps / onePercentCount;
+    }
+
+    // Display performance metrics
+    ImGui::Text("Performance Metrics");
+    ImGui::Text("Current FPS: %.1f", (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f);
+    ImGui::Text("Average FPS: %.1f", avgFps);
+    ImGui::Text("1%% Low FPS: %.1f", onePercentLowFps);
+    ImGui::Text("Samples: %d", sampleCount);
+
+    ImGui::Spacing();
+    ImGui::Text("Frame Time Graph (ms)");
+
+    // Find min/max for graph scaling
+    float minFrameTime = FLT_MAX;
+    float maxFrameTime = 0.0f;
+    for (int i = 0; i < sampleCount; i++) {
+        minFrameTime = std::min(minFrameTime, frameTimeHistory[i]);
+        maxFrameTime = std::max(maxFrameTime, frameTimeHistory[i]);
+    }
+
+    // Display frame time graph
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "%.2f ms", deltaTime * 1000.0f);
+    ImGui::PlotLines("##FrameTime", frameTimeHistory.data(), sampleCount,
+                     frameTimeIndex, overlay,
+                     0.0f, maxFrameTime * 1.2f,
+                     ImVec2(0, 80));
+
     ImGui::Separator();
 
     PhysicsParams* params = scene->GetPhysicsParams();
@@ -1379,6 +1462,22 @@ void Renderer::RenderImGui() {
     // Turbulence strength
     if (ImGui::SliderFloat("Turbulence Strength", &data.turbulenceStrength, 0.0f, 10.0f)) {
         updated = true;
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Blade Count");
+
+    // Blade count control (powers of 2)
+    static int bladePower = 13;  // Default to 1 << 13
+    if (ImGui::SliderInt("Blade Count (2^N)", &bladePower, 0, 20)) {
+        data.activeBladeCount = 1 << bladePower;
+        updated = true;
+    }
+
+    // Display actual blade count
+    ImGui::Text("Active Blades: %u", data.activeBladeCount);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Number of grass blades to simulate and render");
     }
 
     ImGui::Separator();
@@ -1419,6 +1518,7 @@ void Renderer::RenderImGui() {
     // Update buffer if any parameter changed
     if (updated) {
         params->UpdateBuffer();
+        ResetPerformanceMetrics();  // Reset performance tracking when parameters change
     }
 
     ImGui::End();

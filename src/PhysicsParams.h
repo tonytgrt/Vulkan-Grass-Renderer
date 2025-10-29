@@ -24,6 +24,10 @@ struct PhysicsParamsData {
 
     float maxDistance = 30.0f;             // Max distance for culling
     float numBuckets = 10.0f;              // Number of distance buckets (as float for std140)
+
+    // Blade count control
+    uint32_t activeBladeCount = 1 << 13;   // Number of blades to simulate (max 1 << 20)
+    float padding2[3];                      // Align to 16 bytes
 };
 
 class PhysicsParams {
