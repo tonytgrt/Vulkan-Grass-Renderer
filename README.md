@@ -60,7 +60,6 @@ struct Blade {
 
 This Bezier representation allows smooth, curved grass blades while requiring only 64 bytes per blade. The quadratic curve formula `P(t) = (1-t)² * v0 + 2(1-t)t * v1 + t² * v2` generates natural-looking shapes.
 
-
 #### Vulkan Tessellation Pipeline
 
 ![](/img/s_no_force.png)
