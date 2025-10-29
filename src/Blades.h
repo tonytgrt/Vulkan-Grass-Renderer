@@ -9,8 +9,8 @@ constexpr static float MIN_HEIGHT = 1.3f;
 constexpr static float MAX_HEIGHT = 2.5f;
 constexpr static float MIN_WIDTH = 0.1f;
 constexpr static float MAX_WIDTH = 0.14f;
-constexpr static float MIN_BEND = 0.5f;
-constexpr static float MAX_BEND = 1.5f;
+constexpr static float MIN_BEND = 7.0f;
+constexpr static float MAX_BEND = 13.0f;
 
 struct Blade {
     // Position and direction

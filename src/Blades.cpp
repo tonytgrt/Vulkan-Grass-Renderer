@@ -25,23 +25,11 @@ Blades::Blades(Device* device, VkCommandPool commandPool, float planeDim) : Mode
 
         // Bezier point and height (v1)
         float height = MIN_HEIGHT + (generateRandomFloat() * (MAX_HEIGHT - MIN_HEIGHT));
-
-        // Calculate blade facing direction for initial curve
-        glm::vec3 bladeDirection(sin(direction), 0.0f, cos(direction));
-
-        // Give blade an initial natural curve by offsetting v1 and v2 in the facing direction
-        // This creates the "resting" curved posture of grass
-        float bendAmount = 0.1f; // How much the blade naturally curves forward (increased for visibility)
-
-        // v1 is the Bezier control point - position it at 2/3 height with slight forward lean
-        glm::vec3 v1Position = bladePosition + bladeUp * height * (2.0f / 3.0f) + bladeDirection * height * bendAmount * 0.5f;
-        currentBlade.v1 = glm::vec4(v1Position, height);
+        currentBlade.v1 = glm::vec4(bladePosition + bladeUp * height, height);
 
         // Physical model guide and width (v2)
         float width = MIN_WIDTH + (generateRandomFloat() * (MAX_WIDTH - MIN_WIDTH));
-        // v2 is the tip position - starts at full height with forward bend
-        glm::vec3 v2Position = bladePosition + bladeUp * height + bladeDirection * height * bendAmount;
-        currentBlade.v2 = glm::vec4(v2Position, width);
+        currentBlade.v2 = glm::vec4(bladePosition + bladeUp * height, width);
 
         // Up vector and stiffness coefficient (up)
         float stiffness = MIN_BEND + (generateRandomFloat() * (MAX_BEND - MIN_BEND));
