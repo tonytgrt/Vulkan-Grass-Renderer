@@ -63,7 +63,6 @@ This Bezier representation allows smooth, curved grass blades while requiring on
 
 #### Vulkan Tessellation Pipeline
 
-Grass Without any Force
 ![](/img/s_no_force.png)
 
 The graphics pipeline uses **hardware tessellation** to dynamically generate blade geometry from Bezier curves ([grass.tesc](src/shaders/grass.tesc), [grass.tese](src/shaders/grass.tese)):
