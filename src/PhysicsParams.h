@@ -27,7 +27,11 @@ struct PhysicsParamsData {
 
     // Blade count control
     uint32_t activeBladeCount = 1 << 13;   // Number of blades to simulate (max 1 << 20)
-    float padding2[3];                      // Align to 16 bytes
+
+    // Culling enable flags (uint32_t for std140 alignment, treated as bool in shader)
+    uint32_t enableOrientationCulling = 1;  // Enable orientation culling
+    uint32_t enableViewFrustumCulling = 1;  // Enable view-frustum culling
+    uint32_t enableDistanceCulling = 1;     // Enable distance culling
 };
 
 class PhysicsParams {

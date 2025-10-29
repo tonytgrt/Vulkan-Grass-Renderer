@@ -95,11 +95,21 @@ private:
     uint32_t lastBladeCount = 1 << 20; 
 
     // FPS and frame time tracking
-    static constexpr int FRAME_TIME_HISTORY_SIZE = 1000;  
+    static constexpr int FRAME_TIME_HISTORY_SIZE = 1000;
     std::vector<float> frameTimeHistory;
     std::vector<float> fpsHistory;
     int frameTimeIndex = 0;
     bool frameTimeHistoryFilled = false;
+
+    // ImGui update throttling
+    static constexpr float IMGUI_UPDATE_INTERVAL = 0.2f;  // Update every 0.2 seconds
+    float timeSinceLastImGuiUpdate = 0.0f;
+    float cachedCurrentFps = 0.0f;
+    float cachedAvgFps = 0.0f;
+    float cachedOnePercentLowFps = 0.0f;
+    int cachedSampleCount = 0;
+    float cachedCurrentFrameTime = 0.0f;
+    float cachedMaxFrameTime = 0.0f;
 
     void ResetPerformanceMetrics();
     void UpdatePerformanceMetrics(float deltaTime);

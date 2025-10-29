@@ -15,6 +15,7 @@
 #include <cfloat>
 
 static constexpr unsigned int WORKGROUP_SIZE = 32;
+static constexpr unsigned int RENDER_WIDTH = 1920;  // Render viewport width (ImGui panel is 500px on right)
 
 Renderer::Renderer(Device* device, SwapChain* swapChain, Scene* scene, Camera* camera)
     : device(device),
@@ -575,14 +576,14 @@ void Renderer::CreateGraphicsPipeline() {
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChain->GetVkExtent().width);
+    viewport.width = static_cast<float>(RENDER_WIDTH);  // Only render to left 1920 pixels
     viewport.height = static_cast<float>(swapChain->GetVkExtent().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor = {};
     scissor.offset = { 0, 0 };
-    scissor.extent = swapChain->GetVkExtent();
+    scissor.extent = { RENDER_WIDTH, swapChain->GetVkExtent().height };  // Scissor to render area
 
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -749,14 +750,14 @@ void Renderer::CreateGrassPipeline() {
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChain->GetVkExtent().width);
+    viewport.width = static_cast<float>(RENDER_WIDTH);  // Only render to left 1920 pixels
     viewport.height = static_cast<float>(swapChain->GetVkExtent().height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
     VkRect2D scissor = {};
     scissor.offset = { 0, 0 };
-    scissor.extent = swapChain->GetVkExtent();
+    scissor.extent = { RENDER_WIDTH, swapChain->GetVkExtent().height };  // Scissor to render area
 
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -1349,6 +1350,13 @@ void Renderer::ResetPerformanceMetrics() {
     frameTimeHistoryFilled = false;
     std::fill(frameTimeHistory.begin(), frameTimeHistory.end(), 0.0f);
     std::fill(fpsHistory.begin(), fpsHistory.end(), 0.0f);
+    timeSinceLastImGuiUpdate = 0.0f;
+    cachedCurrentFps = 0.0f;
+    cachedAvgFps = 0.0f;
+    cachedOnePercentLowFps = 0.0f;
+    cachedSampleCount = 0;
+    cachedCurrentFrameTime = 0.0f;
+    cachedMaxFrameTime = 0.0f;
 }
 
 void Renderer::UpdatePerformanceMetrics(float deltaTime) {
@@ -1368,64 +1376,74 @@ void Renderer::RenderImGui() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowSize(ImVec2(550, 700), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    // Set ImGui panel as fixed right sidebar
+    ImGui::SetNextWindowPos(ImVec2(RENDER_WIDTH, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(500, 1080), ImGuiCond_Always);
 
-    ImGui::Begin("Physics & Culling Parameters");
+    // Create non-movable, non-resizable panel
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
+    ImGui::Begin("Physics & Culling Parameters", nullptr, window_flags);
 
-    // Update performance metrics
+    // Update performance metrics (collect data every frame)
     float deltaTime = scene->GetDeltaTime();
     UpdatePerformanceMetrics(deltaTime);
 
-    // Calculate statistics
-    int sampleCount = frameTimeHistoryFilled ? FRAME_TIME_HISTORY_SIZE : frameTimeIndex;
-    float avgFps = 0.0f;
-    float onePercentLowFps = 0.0f;
+    // Accumulate time for ImGui update throttling
+    timeSinceLastImGuiUpdate += deltaTime;
 
-    if (sampleCount > 0) {
-        // Calculate average FPS
-        float sumFps = 0.0f;
-        for (int i = 0; i < sampleCount; i++) {
-            sumFps += fpsHistory[i];
+    // Only recalculate statistics every IMGUI_UPDATE_INTERVAL seconds
+    if (timeSinceLastImGuiUpdate >= IMGUI_UPDATE_INTERVAL) {
+        timeSinceLastImGuiUpdate = 0.0f;
+
+        // Calculate statistics
+        int sampleCount = frameTimeHistoryFilled ? FRAME_TIME_HISTORY_SIZE : frameTimeIndex;
+        cachedSampleCount = sampleCount;
+        cachedCurrentFps = (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f;
+        cachedCurrentFrameTime = deltaTime * 1000.0f;
+
+        if (sampleCount > 0) {
+            // Calculate average FPS
+            float sumFps = 0.0f;
+            for (int i = 0; i < sampleCount; i++) {
+                sumFps += fpsHistory[i];
+            }
+            cachedAvgFps = sumFps / sampleCount;
+
+            // Calculate 1% low FPS
+            std::vector<float> sortedFps(fpsHistory.begin(), fpsHistory.begin() + sampleCount);
+            std::sort(sortedFps.begin(), sortedFps.end());
+
+            int onePercentCount = std::max(1, sampleCount / 100);
+            float sumLowFps = 0.0f;
+            for (int i = 0; i < onePercentCount; i++) {
+                sumLowFps += sortedFps[i];
+            }
+            cachedOnePercentLowFps = sumLowFps / onePercentCount;
+
+            // Find max frame time for graph scaling
+            cachedMaxFrameTime = 0.0f;
+            for (int i = 0; i < sampleCount; i++) {
+                cachedMaxFrameTime = std::max(cachedMaxFrameTime, frameTimeHistory[i]);
+            }
         }
-        avgFps = sumFps / sampleCount;
-
-        // Calculate 1% low FPS
-        std::vector<float> sortedFps(fpsHistory.begin(), fpsHistory.begin() + sampleCount);
-        std::sort(sortedFps.begin(), sortedFps.end());
-
-        int onePercentCount = std::max(1, sampleCount / 100);
-        float sumLowFps = 0.0f;
-        for (int i = 0; i < onePercentCount; i++) {
-            sumLowFps += sortedFps[i];
-        }
-        onePercentLowFps = sumLowFps / onePercentCount;
     }
 
-    // Display performance metrics
+    // Display performance metrics (using cached values for stability)
     ImGui::Text("Performance Metrics");
-    ImGui::Text("Current FPS: %.1f", (deltaTime > 0.0f) ? (1.0f / deltaTime) : 0.0f);
-    ImGui::Text("Average FPS: %.1f", avgFps);
-    ImGui::Text("1%% Low FPS: %.1f", onePercentLowFps);
-    ImGui::Text("Samples: %d", sampleCount);
+    ImGui::Text("Current FPS: %.1f", cachedCurrentFps);
+    ImGui::Text("Average FPS: %.1f", cachedAvgFps);
+    ImGui::Text("1%% Low FPS: %.1f", cachedOnePercentLowFps);
+    ImGui::Text("Samples: %d", cachedSampleCount);
 
     ImGui::Spacing();
     ImGui::Text("Frame Time Graph (ms)");
 
-    // Find min/max for graph scaling
-    float minFrameTime = FLT_MAX;
-    float maxFrameTime = 0.0f;
-    for (int i = 0; i < sampleCount; i++) {
-        minFrameTime = std::min(minFrameTime, frameTimeHistory[i]);
-        maxFrameTime = std::max(maxFrameTime, frameTimeHistory[i]);
-    }
-
-    // Display frame time graph
+    // Display frame time graph using cached values for stability
     char overlay[64];
-    snprintf(overlay, sizeof(overlay), "%.2f ms", deltaTime * 1000.0f);
-    ImGui::PlotLines("##FrameTime", frameTimeHistory.data(), sampleCount,
+    snprintf(overlay, sizeof(overlay), "%.2f ms", cachedCurrentFrameTime);
+    ImGui::PlotLines("##FrameTime", frameTimeHistory.data(), cachedSampleCount,
                      frameTimeIndex, overlay,
-                     0.0f, maxFrameTime * 1.2f,
+                     0.0f, cachedMaxFrameTime * 1.2f,
                      ImVec2(0, 80));
 
     ImGui::Separator();
@@ -1482,6 +1500,36 @@ void Renderer::RenderImGui() {
 
     ImGui::Separator();
     ImGui::Text("Culling Settings");
+
+    // Culling enable toggles
+    bool enableOrientation = data.enableOrientationCulling != 0;
+    if (ImGui::Checkbox("Enable Orientation Culling", &enableOrientation)) {
+        data.enableOrientationCulling = enableOrientation ? 1 : 0;
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Cull blades facing edge-on to camera");
+    }
+
+    bool enableViewFrustum = data.enableViewFrustumCulling != 0;
+    if (ImGui::Checkbox("Enable View-Frustum Culling", &enableViewFrustum)) {
+        data.enableViewFrustumCulling = enableViewFrustum ? 1 : 0;
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Cull blades outside camera view frustum");
+    }
+
+    bool enableDistance = data.enableDistanceCulling != 0;
+    if (ImGui::Checkbox("Enable Distance Culling", &enableDistance)) {
+        data.enableDistanceCulling = enableDistance ? 1 : 0;
+        updated = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Cull distant blades for performance");
+    }
+
+    ImGui::Spacing();
 
     // Orientation culling threshold
     if (ImGui::SliderFloat("Orientation Threshold", &data.orientationThreshold, 0.0f, 1.0f)) {

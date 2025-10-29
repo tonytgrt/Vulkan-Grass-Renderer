@@ -52,6 +52,9 @@ layout(set = 3, binding = 0) uniform PhysicsParams {
     float maxDistance;
     float numBuckets;
     uint activeBladeCount;
+    uint enableOrientationCulling;
+    uint enableViewFrustumCulling;
+    uint enableDistanceCulling;
 } physics;
 
 bool inBounds(float value, float bounds) {
@@ -172,47 +175,54 @@ void main() {
     // Culling tests
     bool culled = false;
 
-    // Orientation culling 
     vec3 cameraPos = camera.cameraPosition;
-    vec3 viewDir = normalize(cameraPos - v0);
-    if (abs(dot(theta, viewDir)) > physics.orientationThreshold) {
-        culled = true;
+
+    // Orientation culling
+    if (physics.enableOrientationCulling != 0) {
+        vec3 viewDir = normalize(cameraPos - v0);
+        if (abs(dot(theta, viewDir)) > physics.orientationThreshold) {
+            culled = true;
+        }
     }
 
     // View-frustum culling
-    vec4 clipV0 = camera.proj * camera.view * vec4(v0, 1.0);
-    vec4 clipV2 = camera.proj * camera.view * vec4(v2, 1.0);
+    if (physics.enableViewFrustumCulling != 0) {
+        vec4 clipV0 = camera.proj * camera.view * vec4(v0, 1.0);
+        vec4 clipV2 = camera.proj * camera.view * vec4(v2, 1.0);
 
-    vec3 ndcV0 = clipV0.xyz / clipV0.w;
-    vec3 ndcV2 = clipV2.xyz / clipV2.w;
+        vec3 ndcV0 = clipV0.xyz / clipV0.w;
+        vec3 ndcV2 = clipV2.xyz / clipV2.w;
 
-    float tolerance = physics.frustumTolerance;
+        float tolerance = physics.frustumTolerance;
 
-    bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
-    bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
-    bool outsideBottom = (ndcV0.y < -1.0 - tolerance) && (ndcV2.y < -1.0 - tolerance);
-    bool outsideTop = (ndcV0.y > 1.0 + tolerance) && (ndcV2.y > 1.0 + tolerance);
-    bool outsideNear = (ndcV0.z < -1.0 - tolerance) && (ndcV2.z < -1.0 - tolerance);
-    bool outsideFar = (ndcV0.z > 1.0 + tolerance) && (ndcV2.z > 1.0 + tolerance);
+        bool outsideLeft = (ndcV0.x < -1.0 - tolerance) && (ndcV2.x < -1.0 - tolerance);
+        bool outsideRight = (ndcV0.x > 1.0 + tolerance) && (ndcV2.x > 1.0 + tolerance);
+        bool outsideBottom = (ndcV0.y < -1.0 - tolerance) && (ndcV2.y < -1.0 - tolerance);
+        bool outsideTop = (ndcV0.y > 1.0 + tolerance) && (ndcV2.y > 1.0 + tolerance);
+        bool outsideNear = (ndcV0.z < -1.0 - tolerance) && (ndcV2.z < -1.0 - tolerance);
+        bool outsideFar = (ndcV0.z > 1.0 + tolerance) && (ndcV2.z > 1.0 + tolerance);
 
-    if (outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar) {
-        culled = true;
+        if (outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar) {
+            culled = true;
+        }
     }
 
     // Distance culling
-    float distanceToCamera = length(cameraPos - v0);
+    if (physics.enableDistanceCulling != 0) {
+        float distanceToCamera = length(cameraPos - v0);
 
-    if (distanceToCamera > physics.maxDistance) {
-        culled = true;
-    } else {
-        int bucketIndex = int(floor(physics.numBuckets * distanceToCamera / physics.maxDistance));
-        bucketIndex = min(bucketIndex, int(physics.numBuckets) - 1);
-
-        float hash = fract(sin(dot(v0.xz ,vec2(12.9898,78.233))) * 43758.5453);
-        float cullThreshold = 1.0 - (float(bucketIndex) / physics.numBuckets);
-
-        if (hash > cullThreshold) {
+        if (distanceToCamera > physics.maxDistance) {
             culled = true;
+        } else {
+            int bucketIndex = int(floor(physics.numBuckets * distanceToCamera / physics.maxDistance));
+            bucketIndex = min(bucketIndex, int(physics.numBuckets) - 1);
+
+            float hash = fract(sin(dot(v0.xz ,vec2(12.9898,78.233))) * 43758.5453);
+            float cullThreshold = 1.0 - (float(bucketIndex) / physics.numBuckets);
+
+            if (hash > cullThreshold) {
+                culled = true;
+            }
         }
     }
 
