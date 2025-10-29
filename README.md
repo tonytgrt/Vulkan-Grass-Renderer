@@ -6,6 +6,8 @@ Vulkan Grass Rendering
 * Yiding Tian
 * Tested on: Windows 11, i9-13900H @ 4.1GHz 32GB, RTX 5080 16GB (Personal laptop with external desktop GPU via NVMe connector running in PCIe 4.0x4)
 
+![](img/thumb.gif)
+
 ### Overview
 
 This project is a real-time grass renderer implemented in Vulkan, based on the paper [*Responsive Real-Time Grass Rendering for General 3D Scenes*](https://www.cg.tuwien.ac.at/research/publications/2017/JAHRMANN-2017-RRTG/JAHRMANN-2017-RRTG-draft.pdf) by Jahrmann and Wimmer. The renderer simulates and renders large fields of grass blades (up to 1 million blades) at interactive frame rates by leveraging the GPU's parallel processing capabilities through Vulkan's compute and graphics pipelines.
